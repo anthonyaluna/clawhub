@@ -1,54 +1,16 @@
 import {
   type ClawdisSkillMetadata,
   ClawdisSkillMetadataSchema,
+  isTextContentType,
   parseArk,
   type SkillInstallSpec,
+  TEXT_FILE_EXTENSION_SET,
 } from '@clawdhub/schema'
 
 export type ParsedSkillFrontmatter = Record<string, string>
 export type { ClawdisSkillMetadata, SkillInstallSpec }
 
 const FRONTMATTER_START = '---'
-
-const TEXT_EXTENSIONS = new Set([
-  'md',
-  'mdx',
-  'txt',
-  'json',
-  'json5',
-  'yaml',
-  'yml',
-  'toml',
-  'js',
-  'cjs',
-  'mjs',
-  'ts',
-  'tsx',
-  'jsx',
-  'py',
-  'sh',
-  'rb',
-  'go',
-  'rs',
-  'swift',
-  'kt',
-  'java',
-  'cs',
-  'cpp',
-  'c',
-  'h',
-  'hpp',
-  'sql',
-  'csv',
-  'ini',
-  'cfg',
-  'env',
-  'xml',
-  'html',
-  'css',
-  'scss',
-  'sass',
-])
 
 export function parseFrontmatter(content: string): ParsedSkillFrontmatter {
   const frontmatter: ParsedSkillFrontmatter = {}
@@ -128,23 +90,9 @@ export function isTextFile(path: string, contentType?: string | null) {
   const parts = trimmed.split('.')
   const extension = parts.length > 1 ? (parts.at(-1) ?? '') : ''
   if (contentType) {
-    if (contentType.startsWith('text/')) return true
-    if (
-      [
-        'application/json',
-        'application/xml',
-        'application/yaml',
-        'application/x-yaml',
-        'application/toml',
-        'application/javascript',
-        'application/typescript',
-        'application/markdown',
-      ].includes(contentType)
-    ) {
-      return true
-    }
+    if (isTextContentType(contentType)) return true
   }
-  if (extension && TEXT_EXTENSIONS.has(extension)) return true
+  if (extension && TEXT_FILE_EXTENSION_SET.has(extension)) return true
   return false
 }
 

@@ -1,49 +1,8 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
-import { type Lockfile, LockfileSchema, parseArk } from '@clawdhub/schema'
+import { type Lockfile, LockfileSchema, parseArk, TEXT_FILE_EXTENSION_SET } from '@clawdhub/schema'
 import { unzipSync } from 'fflate'
-
-const TEXT_EXTENSIONS = new Set([
-  'md',
-  'mdx',
-  'txt',
-  'json',
-  'json5',
-  'yaml',
-  'yml',
-  'toml',
-  'js',
-  'cjs',
-  'mjs',
-  'ts',
-  'tsx',
-  'jsx',
-  'py',
-  'sh',
-  'rb',
-  'go',
-  'rs',
-  'swift',
-  'kt',
-  'java',
-  'cs',
-  'cpp',
-  'c',
-  'h',
-  'hpp',
-  'sql',
-  'csv',
-  'ini',
-  'cfg',
-  'env',
-  'xml',
-  'html',
-  'css',
-  'scss',
-  'sass',
-  'svg',
-])
 
 export async function extractZipToDir(zipBytes: Uint8Array, targetDir: string) {
   const entries = unzipSync(zipBytes)
@@ -64,7 +23,7 @@ export async function listTextFiles(root: string) {
     const relPath = normalizePath(relative(absRoot, absPath))
     if (!relPath) return
     const ext = relPath.split('.').at(-1)?.toLowerCase() ?? ''
-    if (!ext || !TEXT_EXTENSIONS.has(ext)) return
+    if (!ext || !TEXT_FILE_EXTENSION_SET.has(ext)) return
     const buffer = await readFile(absPath)
     files.push({ relPath, bytes: new Uint8Array(buffer) })
   })
