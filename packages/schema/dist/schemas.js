@@ -1,7 +1,7 @@
 import { type } from 'arktype';
 export const GlobalConfigSchema = type({
     registry: 'string',
-    token: 'string',
+    token: 'string?',
 });
 export const WellKnownConfigSchema = type({
     apiBase: 'string',

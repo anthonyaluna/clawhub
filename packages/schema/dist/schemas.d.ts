@@ -1,7 +1,7 @@
 import { type inferred } from 'arktype';
 export declare const GlobalConfigSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     registry: string;
-    token: string;
+    token?: string | undefined;
 }, {}>;
 export type GlobalConfig = (typeof GlobalConfigSchema)[inferred];
 export declare const WellKnownConfigSchema: import("arktype/internal/variants/object.ts").ObjectType<{
