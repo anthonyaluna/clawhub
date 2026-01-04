@@ -9,7 +9,7 @@
 - ~~CLI upload ergonomics:~~
   - ~~Add `ignore` (respect `.gitignore` / `.clawdhubignore` during file collection).~~
   - ~~Add `mime` (better `contentType` on upload).~~
-- Dependency hygiene:
-  - Remove unused deps: `lucide-react`, `@radix-ui/react-slot`, `web-vitals`, `@tanstack/react-router-ssr-query` (verify via `rg` + build).
+- ~~Dependency hygiene:~~
+  - ~~Remove unused deps: `@radix-ui/react-slot`, `web-vitals`, `@tanstack/react-router-ssr-query` (keep `lucide-react`, used).~~
 - CI:
   - Add GitHub Actions workflow: install, lint, test, coverage, build.
