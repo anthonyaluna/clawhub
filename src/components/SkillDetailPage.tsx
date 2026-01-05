@@ -99,6 +99,22 @@ export function SkillDetailPage({
   const osLabels = useMemo(() => formatOsList(clawdis?.os), [clawdis?.os])
   const requirements = clawdis?.requires
   const installSpecs = clawdis?.install ?? []
+  const nixPlugin = clawdis?.nix?.plugin
+  const nixSystems = clawdis?.nix?.systems ?? []
+  const nixSnippet = nixPlugin ? formatNixInstallSnippet(nixPlugin) : null
+  const configRequirements = clawdis?.config
+  const cliHelp = clawdis?.cliHelp
+  const hasRuntimeRequirements = Boolean(
+    clawdis?.emoji ||
+      osLabels.length ||
+      requirements?.bins?.length ||
+      requirements?.anyBins?.length ||
+      requirements?.env?.length ||
+      requirements?.config?.length ||
+      clawdis?.primaryEnv,
+  )
+  const hasInstallSpecs = installSpecs.length > 0
+  const hasPluginBundle = Boolean(nixSnippet || configRequirements || cliHelp)
   const readmeContent = useMemo(() => {
     if (!readme) return null
     return stripFrontmatter(readme)
@@ -155,84 +171,147 @@ export function SkillDetailPage({
     <main className="section">
       <div className="skill-detail-stack">
         <div className="card skill-hero">
-          <div className="skill-hero-header">
-            <div className="skill-hero-title">
-              <h1 className="section-title" style={{ margin: 0 }}>
-                {skill.displayName}
-              </h1>
-              <p className="section-subtitle">{skill.summary ?? 'No summary provided.'}</p>
-              <div className="stat">
-                ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
-                {skill.stats.installsCurrent ?? 0} current · {skill.stats.installsAllTime ?? 0}{' '}
-                all-time
-              </div>
-              {owner?.handle ? (
-                <div className="stat">
-                  by <a href={`/u/${owner.handle}`}>@{owner.handle}</a>
+          <div className={`skill-hero-top${hasPluginBundle ? ' has-plugin' : ''}`}>
+            <div className="skill-hero-header">
+              <div className="skill-hero-title">
+                <div className="skill-hero-title-row">
+                  <h1 className="section-title" style={{ margin: 0 }}>
+                    {skill.displayName}
+                  </h1>
+                  {nixPlugin ? <span className="tag tag-accent">Plugin bundle (nix)</span> : null}
                 </div>
-              ) : null}
-              {forkOf && forkOfHref ? (
-                <div className="stat">
-                  {forkOfLabel}{' '}
-                  <a href={forkOfHref}>
-                    {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ''}
-                    {forkOf.skill.slug}
-                  </a>
-                  {forkOf.version ? ` (based on ${forkOf.version})` : null}
-                </div>
-              ) : null}
-              {canonicalHref ? (
-                <div className="stat">
-                  canonical:{' '}
-                  <a href={canonicalHref}>
-                    {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ''}
-                    {canonical?.skill?.slug}
-                  </a>
-                </div>
-              ) : null}
-              {skill.batch === 'highlighted' ? <div className="tag">Highlighted</div> : null}
-              <div className="skill-actions">
-                {isAuthenticated ? (
-                  <button
-                    className={`star-toggle${isStarred ? ' is-active' : ''}`}
-                    type="button"
-                    onClick={() => void toggleStar({ skillId: skill._id })}
-                    aria-label={isStarred ? 'Unstar skill' : 'Star skill'}
-                  >
-                    <span aria-hidden="true">★</span>
-                  </button>
+                <p className="section-subtitle">{skill.summary ?? 'No summary provided.'}</p>
+
+                {nixPlugin ? (
+                  <div className="skill-hero-note">
+                    Bundles the skill pack, CLI binary, and config requirements in one Nix install.
+                  </div>
                 ) : null}
-                {canHighlight ? (
-                  <button
-                    className={`highlight-toggle${skill.batch === 'highlighted' ? ' is-active' : ''}`}
-                    type="button"
-                    onClick={() =>
-                      void setBatch({
-                        skillId: skill._id,
-                        batch: skill.batch === 'highlighted' ? undefined : 'highlighted',
-                      })
-                    }
-                    aria-label={
-                      skill.batch === 'highlighted' ? 'Unhighlight skill' : 'Highlight skill'
-                    }
+                <div className="stat">
+                  ⭐ {skill.stats.stars} · ⤓ {skill.stats.downloads} · ⤒{' '}
+                  {skill.stats.installsCurrent ?? 0} current · {skill.stats.installsAllTime ?? 0}{' '}
+                  all-time
+                </div>
+                {owner?.handle ? (
+                  <div className="stat">
+                    by <a href={`/u/${owner.handle}`}>@{owner.handle}</a>
+                  </div>
+                ) : null}
+                {forkOf && forkOfHref ? (
+                  <div className="stat">
+                    {forkOfLabel}{' '}
+                    <a href={forkOfHref}>
+                      {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ''}
+                      {forkOf.skill.slug}
+                    </a>
+                    {forkOf.version ? ` (based on ${forkOf.version})` : null}
+                  </div>
+                ) : null}
+                {canonicalHref ? (
+                  <div className="stat">
+                    canonical:{' '}
+                    <a href={canonicalHref}>
+                      {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ''}
+                      {canonical?.skill?.slug}
+                    </a>
+                  </div>
+                ) : null}
+                {skill.batch === 'highlighted' ? <div className="tag">Highlighted</div> : null}
+                <div className="skill-actions">
+                  {isAuthenticated ? (
+                    <button
+                      className={`star-toggle${isStarred ? ' is-active' : ''}`}
+                      type="button"
+                      onClick={() => void toggleStar({ skillId: skill._id })}
+                      aria-label={isStarred ? 'Unstar skill' : 'Star skill'}
+                    >
+                      <span aria-hidden="true">★</span>
+                    </button>
+                  ) : null}
+                  {canHighlight ? (
+                    <button
+                      className={`highlight-toggle${skill.batch === 'highlighted' ? ' is-active' : ''}`}
+                      type="button"
+                      onClick={() =>
+                        void setBatch({
+                          skillId: skill._id,
+                          batch: skill.batch === 'highlighted' ? undefined : 'highlighted',
+                        })
+                      }
+                      aria-label={
+                        skill.batch === 'highlighted' ? 'Unhighlight skill' : 'Highlight skill'
+                      }
+                    >
+                      <span aria-hidden="true">✦</span>
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="skill-hero-cta">
+                <div className="skill-version-pill">
+                  <span className="skill-version-label">Current version</span>
+                  <strong>v{latestVersion?.version ?? '—'}</strong>
+                </div>
+                {!nixPlugin ? (
+                  <a
+                    className="btn btn-primary"
+                    href={`${import.meta.env.VITE_CONVEX_SITE_URL}/api/v1/download?slug=${skill.slug}`}
                   >
-                    <span aria-hidden="true">✦</span>
-                  </button>
+                    Download zip
+                  </a>
                 ) : null}
               </div>
             </div>
-            <div className="skill-hero-cta">
-              <div className="skill-version-pill">
-                <span className="skill-version-label">Current version</span>
-                <strong>v{latestVersion?.version ?? '—'}</strong>
+            {hasPluginBundle ? (
+              <div className="skill-panel bundle-card">
+                <div className="bundle-header">
+                  <div className="bundle-title">Plugin bundle (nix)</div>
+                  <div className="bundle-subtitle">Skill pack · CLI binary · Config</div>
+                </div>
+                <div className="bundle-includes">
+                  <span>SKILL.md</span>
+                  <span>CLI</span>
+                  <span>Config</span>
+                </div>
+                {nixSnippet ? (
+                  <div className="bundle-section">
+                    <div className="bundle-section-title">Install via Nix</div>
+                    <div style={{ color: 'var(--ink-soft)', fontSize: '0.85rem' }}>
+                      {nixSystems.length ? `Systems: ${nixSystems.join(', ')}` : 'nix-clawdbot'}
+                    </div>
+                    <pre className="hero-install-code">{nixSnippet}</pre>
+                  </div>
+                ) : null}
+                {configRequirements ? (
+                  <div className="bundle-section">
+                    <div className="bundle-section-title">Config requirements</div>
+                    <div className="bundle-meta">
+                      {configRequirements.requiredEnv?.length ? (
+                        <div className="stat">
+                          <strong>Required env</strong>
+                          <span>{configRequirements.requiredEnv.join(', ')}</span>
+                        </div>
+                      ) : null}
+                      {configRequirements.stateDirs?.length ? (
+                        <div className="stat">
+                          <strong>State dirs</strong>
+                          <span>{configRequirements.stateDirs.join(', ')}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                    {configRequirements.example ? (
+                      <pre className="hero-install-code">{configRequirements.example}</pre>
+                    ) : null}
+                  </div>
+                ) : null}
+                {cliHelp ? (
+                  <details className="bundle-section bundle-details">
+                    <summary>CLI help (from plugin)</summary>
+                    <pre className="hero-install-code mono">{cliHelp}</pre>
+                  </details>
+                ) : null}
               </div>
-              <a
-                className="btn btn-primary"
-                href={`${import.meta.env.VITE_CONVEX_SITE_URL}/api/v1/download?slug=${skill.slug}`}
-              >
-                Download zip
-              </a>
-            </div>
+            ) : null}
           </div>
           <div className="skill-tag-row">
             {tagEntries.length === 0 ? (
@@ -284,79 +363,81 @@ export function SkillDetailPage({
               </button>
             </form>
           ) : null}
-          {clawdis || installSpecs.length ? (
-            <div className="skill-hero-panels">
-              {clawdis ? (
-                <div className="skill-panel">
-                  <h3 className="section-title" style={{ fontSize: '1rem', margin: 0 }}>
-                    Requirements
-                  </h3>
-                  <div className="skill-panel-body">
-                    {clawdis.emoji ? <div className="tag">{clawdis.emoji} Clawdis</div> : null}
-                    {osLabels.length ? (
-                      <div className="stat">
-                        <strong>OS</strong>
-                        <span>{osLabels.join(' · ')}</span>
-                      </div>
-                    ) : null}
-                    {requirements?.bins?.length ? (
-                      <div className="stat">
-                        <strong>Bins</strong>
-                        <span>{requirements.bins.join(', ')}</span>
-                      </div>
-                    ) : null}
-                    {requirements?.anyBins?.length ? (
-                      <div className="stat">
-                        <strong>Any bin</strong>
-                        <span>{requirements.anyBins.join(', ')}</span>
-                      </div>
-                    ) : null}
-                    {requirements?.env?.length ? (
-                      <div className="stat">
-                        <strong>Env</strong>
-                        <span>{requirements.env.join(', ')}</span>
-                      </div>
-                    ) : null}
-                    {requirements?.config?.length ? (
-                      <div className="stat">
-                        <strong>Config</strong>
-                        <span>{requirements.config.join(', ')}</span>
-                      </div>
-                    ) : null}
-                    {clawdis.primaryEnv ? (
-                      <div className="stat">
-                        <strong>Primary env</strong>
-                        <span>{clawdis.primaryEnv}</span>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-              {installSpecs.length ? (
-                <div className="skill-panel">
-                  <h3 className="section-title" style={{ fontSize: '1rem', margin: 0 }}>
-                    Install
-                  </h3>
-                  <div className="skill-panel-body">
-                    {installSpecs.map((spec, index) => {
-                      const command = formatInstallCommand(spec)
-                      return (
-                        <div key={`${spec.id ?? spec.kind}-${index}`} className="stat">
-                          <div>
-                            <strong>{spec.label ?? formatInstallLabel(spec)}</strong>
-                            {spec.bins?.length ? (
-                              <div style={{ color: 'var(--ink-soft)', fontSize: '0.85rem' }}>
-                                Bins: {spec.bins.join(', ')}
-                              </div>
-                            ) : null}
-                            {command ? <code>{command}</code> : null}
-                          </div>
+          {hasRuntimeRequirements || hasInstallSpecs ? (
+            <div className="skill-hero-content">
+              <div className="skill-hero-panels">
+                {hasRuntimeRequirements ? (
+                  <div className="skill-panel">
+                    <h3 className="section-title" style={{ fontSize: '1rem', margin: 0 }}>
+                      Runtime requirements
+                    </h3>
+                    <div className="skill-panel-body">
+                      {clawdis?.emoji ? <div className="tag">{clawdis.emoji} Clawdis</div> : null}
+                      {osLabels.length ? (
+                        <div className="stat">
+                          <strong>OS</strong>
+                          <span>{osLabels.join(' · ')}</span>
                         </div>
-                      )
-                    })}
+                      ) : null}
+                      {requirements?.bins?.length ? (
+                        <div className="stat">
+                          <strong>Bins</strong>
+                          <span>{requirements.bins.join(', ')}</span>
+                        </div>
+                      ) : null}
+                      {requirements?.anyBins?.length ? (
+                        <div className="stat">
+                          <strong>Any bin</strong>
+                          <span>{requirements.anyBins.join(', ')}</span>
+                        </div>
+                      ) : null}
+                      {requirements?.env?.length ? (
+                        <div className="stat">
+                          <strong>Env</strong>
+                          <span>{requirements.env.join(', ')}</span>
+                        </div>
+                      ) : null}
+                      {requirements?.config?.length ? (
+                        <div className="stat">
+                          <strong>Config</strong>
+                          <span>{requirements.config.join(', ')}</span>
+                        </div>
+                      ) : null}
+                      {clawdis?.primaryEnv ? (
+                        <div className="stat">
+                          <strong>Primary env</strong>
+                          <span>{clawdis.primaryEnv}</span>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
+                {hasInstallSpecs ? (
+                  <div className="skill-panel">
+                    <h3 className="section-title" style={{ fontSize: '1rem', margin: 0 }}>
+                      Install
+                    </h3>
+                    <div className="skill-panel-body">
+                      {installSpecs.map((spec, index) => {
+                        const command = formatInstallCommand(spec)
+                        return (
+                          <div key={`${spec.id ?? spec.kind}-${index}`} className="stat">
+                            <div>
+                              <strong>{spec.label ?? formatInstallLabel(spec)}</strong>
+                              {spec.bins?.length ? (
+                                <div style={{ color: 'var(--ink-soft)', fontSize: '0.85rem' }}>
+                                  Bins: {spec.bins.join(', ')}
+                                </div>
+                              ) : null}
+                              {command ? <code>{command}</code> : null}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
         </div>
@@ -436,7 +517,9 @@ export function SkillDetailPage({
                   Versions
                 </h2>
                 <p className="section-subtitle" style={{ margin: 0 }}>
-                  Download older releases or scan the changelog.
+                  {nixPlugin
+                    ? 'Review release history and changelog.'
+                    : 'Download older releases or scan the changelog.'}
                 </p>
               </div>
               <div className="version-scroll">
@@ -454,14 +537,16 @@ export function SkillDetailPage({
                           {version.changelog}
                         </div>
                       </div>
-                      <div className="version-actions">
-                        <a
-                          className="btn version-zip"
-                          href={`${import.meta.env.VITE_CONVEX_SITE_URL}/api/v1/download?slug=${skill.slug}&version=${version.version}`}
-                        >
-                          Zip
-                        </a>
-                      </div>
+                      {!nixPlugin ? (
+                        <div className="version-actions">
+                          <a
+                            className="btn version-zip"
+                            href={`${import.meta.env.VITE_CONVEX_SITE_URL}/api/v1/download?slug=${skill.slug}&version=${version.version}`}
+                          >
+                            Zip
+                          </a>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -593,4 +678,8 @@ function formatBytes(bytes: number) {
     unitIndex += 1
   }
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+function formatNixInstallSnippet(plugin: string) {
+  return `programs.clawdbot.plugins = [\n  { source = "${plugin}"; }\n];`
 }

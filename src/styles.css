@@ -17,8 +17,6 @@
   --accent: #ff6b4a;
   --accent-deep: #e54f31;
   --seafoam: #2bc6a4;
-  --diff-added: #6bb7a8;
-  --diff-removed: #e1846c;
   --gold: #f0c46a;
   --line: rgba(29, 26, 23, 0.12);
   --shadow: 0 24px 60px rgba(29, 26, 23, 0.1);
@@ -46,8 +44,6 @@
   --accent: #e86a47;
   --accent-deep: #c24a2f;
   --seafoam: #4ad8b7;
-  --diff-added: #3aa38d;
-  --diff-removed: #b35b46;
   --gold: #f3c97a;
   --line: rgba(255, 255, 255, 0.12);
   --shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
@@ -1400,7 +1396,7 @@ code {
   gap: 8px;
   max-height: 420px;
   overflow: auto;
-  padding: 4px 6px 4px 4px;
+  padding-right: 4px;
 }
 
 .diff-file {
@@ -1418,6 +1414,7 @@ code {
 }
 
 .diff-file:hover {
+  transform: translateY(-1px);
   box-shadow: 0 10px 20px rgba(29, 26, 23, 0.12);
 }
 
@@ -2181,9 +2178,7 @@ code {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
-  display: inline-block;
-  max-width: 100%;
-  background: rgba(255, 107, 74, 0.04);
+  background: rgba(255, 107, 74, 0.06);
   border: 1px solid rgba(255, 107, 74, 0.12);
   border-radius: 14px;
   padding: 14px 16px;
@@ -2197,7 +2192,7 @@ code {
 }
 
 [data-theme="dark"] .markdown pre {
-  background: rgba(18, 14, 12, 0.55);
+  background: rgba(18, 14, 12, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -2286,6 +2281,12 @@ html.theme-transition::view-transition-new(theme) {
   margin-bottom: 24px;
 }
 
+.dashboard-header h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+}
+
 .dashboard-empty {
   display: flex;
   flex-direction: column;
@@ -2296,12 +2297,6 @@ html.theme-transition::view-transition-new(theme) {
   gap: 16px;
 }
 
-.dashboard-empty-icon {
-  width: 48px;
-  height: 48px;
-  color: var(--ink-soft);
-}
-
 .dashboard-empty h2 {
   font-size: 1.25rem;
   font-weight: 600;
@@ -2309,7 +2304,7 @@ html.theme-transition::view-transition-new(theme) {
 }
 
 .dashboard-empty p {
-  color: var(--ink-soft);
+  color: var(--color-muted);
   margin: 0;
 }
 
@@ -2325,14 +2320,14 @@ html.theme-transition::view-transition-new(theme) {
   align-items: flex-start;
   gap: 16px;
   padding: 16px 20px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
   transition: border-color 0.15s ease;
 }
 
 .dashboard-skill-card:hover {
-  border-color: rgba(255, 107, 74, 0.45);
+  border-color: var(--color-accent);
 }
 
 .dashboard-skill-info {
@@ -2343,24 +2338,24 @@ html.theme-transition::view-transition-new(theme) {
 .dashboard-skill-name {
   font-weight: 600;
   font-size: 1.1rem;
-  color: var(--ink);
+  color: var(--color-text);
   text-decoration: none;
 }
 
 .dashboard-skill-name:hover {
-  color: var(--accent);
+  color: var(--color-accent);
 }
 
 .dashboard-skill-slug {
   font-family: var(--font-mono);
   font-size: 0.85rem;
-  color: var(--ink-soft);
+  color: var(--color-muted);
   margin-left: 8px;
 }
 
 .dashboard-skill-description {
   font-size: 0.9rem;
-  color: var(--ink-soft);
+  color: var(--color-muted);
   margin: 8px 0 0;
   line-height: 1.4;
   display: -webkit-box;
@@ -2374,7 +2369,7 @@ html.theme-transition::view-transition-new(theme) {
   gap: 12px;
   margin-top: 8px;
   font-size: 0.8rem;
-  color: var(--ink-soft);
+  color: var(--color-muted);
 }
 
 .dashboard-skill-actions {
@@ -2391,13 +2386,13 @@ html.theme-transition::view-transition-new(theme) {
 
 .btn-ghost {
   background: transparent;
-  border: 1px solid var(--line);
-  color: var(--ink);
+  border: 1px solid var(--card-border);
+  color: var(--color-text);
 }
 
 .btn-ghost:hover {
-  background: var(--surface-muted);
-  border-color: rgba(255, 107, 74, 0.45);
+  background: var(--card-bg);
+  border-color: var(--color-accent);
 }
 
 @media (max-width: 640px) {

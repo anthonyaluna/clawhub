@@ -7,17 +7,16 @@ import semver from 'semver'
 import { apiRequest, downloadZip } from '../../http.js'
 import {
   ApiCliTelemetrySyncResponseSchema,
+  ApiCliWhoamiResponseSchema,
   ApiRoutes,
-  ApiV1SkillResolveResponseSchema,
-  ApiV1SkillResponseSchema,
-  ApiV1WhoamiResponseSchema,
-  LegacyApiRoutes,
+  ApiSkillMetaResponseSchema,
+  ApiSkillResolveResponseSchema,
 } from '../../schema/index.js'
 import { hashSkillZip } from '../../skills.js'
 import { getRegistry } from '../registry.js'
 import { findSkillFolders, type SkillFolder } from '../scanSkills.js'
 import type { GlobalOpts } from '../types.js'
-import { fail, formatError } from '../ui.js'
+import { fail, formatError, isInteractive } from '../ui.js'
 import type { Candidate, LocalSkill } from './syncTypes.js'
 
 export async function reportTelemetryIfEnabled(params: {
@@ -46,7 +45,7 @@ export async function reportTelemetryIfEnabled(params: {
       params.registry,
       {
         method: 'POST',
-        path: LegacyApiRoutes.cliTelemetrySync,
+        path: ApiRoutes.cliTelemetrySync,
         token: params.token,
         body: { roots },
       },
@@ -74,11 +73,7 @@ export function normalizeConcurrency(value: number | undefined) {
   return Math.min(32, Math.max(1, rounded))
 }
 
-export async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-) {
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>) {
   const results = Array.from({ length: items.length }) as R[]
   let nextIndex = 0
   const workerCount = Math.min(Math.max(1, limit), items.length || 1)
@@ -107,9 +102,9 @@ export async function checkRegistrySyncState(
         registry,
         {
           method: 'GET',
-          path: `${ApiRoutes.resolve}?slug=${encodeURIComponent(skill.slug)}&hash=${encodeURIComponent(skill.fingerprint)}`,
+          path: `${ApiRoutes.skillResolve}?slug=${encodeURIComponent(skill.slug)}&hash=${encodeURIComponent(skill.fingerprint)}`,
         },
-        ApiV1SkillResolveResponseSchema,
+        ApiSkillResolveResponseSchema,
       )
       resolveSupport.value = true
       const latestVersion = resolved.latestVersion?.version ?? null
@@ -149,8 +144,8 @@ export async function checkRegistrySyncState(
 
   const meta = await apiRequest(
     registry,
-    { method: 'GET', path: `${ApiRoutes.skills}/${encodeURIComponent(skill.slug)}` },
-    ApiV1SkillResponseSchema,
+    { method: 'GET', path: `${ApiRoutes.skill}?slug=${encodeURIComponent(skill.slug)}` },
+    ApiSkillMetaResponseSchema,
   ).catch(() => null)
 
   const latestVersion = meta?.latestVersion?.version ?? null
@@ -307,8 +302,8 @@ export async function getRegistryWithAuth(opts: GlobalOpts, token: string) {
   const registry = await getRegistry(opts, { cache: true })
   await apiRequest(
     registry,
-    { method: 'GET', path: ApiRoutes.whoami, token },
-    ApiV1WhoamiResponseSchema,
+    { method: 'GET', path: ApiRoutes.cliWhoami, token },
+    ApiCliWhoamiResponseSchema,
   )
   return registry
 }
@@ -377,10 +372,7 @@ export function dedupeSkillsBySlug(skills: SkillFolder[]) {
   return { skills: unique, duplicates }
 }
 
-export function formatActionableStatus(
-  candidate: Candidate,
-  bump: 'patch' | 'minor' | 'major',
-): string {
+export function formatActionableStatus(candidate: Candidate, bump: 'patch' | 'minor' | 'major'): string {
   if (candidate.status === 'new') return 'NEW'
   const latest = candidate.latestVersion
   const next = latest ? semver.inc(latest, bump) : null
@@ -388,10 +380,7 @@ export function formatActionableStatus(
   return 'UPDATE'
 }
 
-export function formatActionableLine(
-  candidate: Candidate,
-  bump: 'patch' | 'minor' | 'major',
-): string {
+export function formatActionableLine(candidate: Candidate, bump: 'patch' | 'minor' | 'major'): string {
   return `${candidate.slug}  ${formatActionableStatus(candidate, bump)}  (${candidate.fileCount} files)`
 }
 

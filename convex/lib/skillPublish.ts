@@ -68,14 +68,16 @@ export async function publishVersionForUser(
   const suppliedChangelog = args.changelog.trim()
   const changelogSource = suppliedChangelog ? ('user' as const) : ('auto' as const)
 
-  const sanitizedFiles = args.files.map((file) => {
-    const path = sanitizePath(file.path)
-    if (!path) throw new ConvexError('Invalid file paths')
-    if (!isTextFile(path, file.contentType ?? undefined)) {
-      throw new ConvexError('Only text-based files are allowed')
-    }
-    return { ...file, path }
-  })
+  const sanitizedFiles = args.files.map((file) => ({
+    ...file,
+    path: sanitizePath(file.path),
+  }))
+  if (sanitizedFiles.some((file) => !file.path)) {
+    throw new ConvexError('Invalid file paths')
+  }
+  if (sanitizedFiles.some((file) => !isTextFile(file.path ?? '', file.contentType ?? undefined))) {
+    throw new ConvexError('Only text-based files are allowed')
+  }
 
   const totalBytes = sanitizedFiles.reduce((sum, file) => sum + file.size, 0)
   if (totalBytes > MAX_TOTAL_BYTES) {
@@ -107,11 +109,8 @@ export async function publishVersionForUser(
     otherFiles,
   })
 
-  const fingerprint = await hashSkillFiles(
-    sanitizedFiles.map((file) => ({
-      path: file.path ?? '',
-      sha256: file.sha256,
-    })),
+  const fingerprintPromise = hashSkillFiles(
+    sanitizedFiles.map((file) => ({ path: file.path ?? '', sha256: file.sha256 })),
   )
 
   const changelogPromise =
@@ -126,7 +125,8 @@ export async function publishVersionForUser(
 
   const embeddingPromise = generateEmbedding(embeddingText)
 
-  const [changelogText, embedding] = await Promise.all([
+  const [fingerprint, changelogText, embedding] = await Promise.all([
+    fingerprintPromise,
     changelogPromise,
     embeddingPromise.catch((error) => {
       throw new ConvexError(formatEmbeddingError(error))
@@ -148,7 +148,10 @@ export async function publishVersionForUser(
           version: args.forkOf.version?.trim() || undefined,
         }
       : undefined,
-    files: sanitizedFiles,
+    files: sanitizedFiles.map((file) => ({
+      ...file,
+      path: file.path ?? '',
+    })),
     parsed: {
       frontmatter,
       metadata,

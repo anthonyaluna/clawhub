@@ -19,7 +19,6 @@ type ReadmeResult = { path: string; text: string }
 type FileTextResult = { path: string; text: string; size: number; sha256: string }
 
 const MAX_DIFF_FILE_BYTES = 200 * 1024
-const MAX_LIST_LIMIT = 50
 
 export const getBySlug = query({
   args: { slug: v.string() },
@@ -113,34 +112,6 @@ export const list = query({
   },
 })
 
-export const listPublicPage = query({
-  args: {
-    cursor: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const limit = clampInt(args.limit ?? 24, 1, MAX_LIST_LIMIT)
-    const { page, isDone, continueCursor } = await ctx.db
-      .query('skills')
-      .withIndex('by_updated', (q) => q)
-      .order('desc')
-      .paginate({ cursor: args.cursor ?? null, numItems: limit })
-
-    const items: Array<{
-      skill: Doc<'skills'>
-      latestVersion: Doc<'skillVersions'> | null
-    }> = []
-
-    for (const skill of page) {
-      if (skill.softDeletedAt) continue
-      const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null
-      items.push({ skill, latestVersion })
-    }
-
-    return { items, nextCursor: isDone ? null : continueCursor }
-  },
-})
-
 export const listVersions = query({
   args: { skillId: v.id('skills'), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
@@ -150,24 +121,6 @@ export const listVersions = query({
       .withIndex('by_skill', (q) => q.eq('skillId', args.skillId))
       .order('desc')
       .take(limit)
-  },
-})
-
-export const listVersionsPage = query({
-  args: {
-    skillId: v.id('skills'),
-    cursor: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const limit = clampInt(args.limit ?? 20, 1, MAX_LIST_LIMIT)
-    const { page, isDone, continueCursor } = await ctx.db
-      .query('skillVersions')
-      .withIndex('by_skill', (q) => q.eq('skillId', args.skillId))
-      .order('desc')
-      .paginate({ cursor: args.cursor ?? null, numItems: limit })
-    const items = page.filter((version) => !version.softDeletedAt)
-    return { items, nextCursor: isDone ? null : continueCursor }
   },
 })
 
@@ -701,11 +654,6 @@ function visibilityFor(isLatest: boolean, isApproved: boolean) {
   if (isLatest) return 'latest'
   if (isApproved) return 'archived-approved'
   return 'archived'
-}
-
-function clampInt(value: number, min: number, max: number) {
-  const rounded = Number.isFinite(value) ? Math.round(value) : min
-  return Math.min(max, Math.max(min, rounded))
 }
 
 async function findCanonicalSkillForFingerprint(
