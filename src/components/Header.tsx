@@ -37,6 +37,7 @@ export default function Header() {
           ClawdHub
         </Link>
         <nav className="nav-links">
+          <Link to="/skills">Skills</Link>
           <Link to="/upload">Upload</Link>
           <Link to="/search">Search</Link>
           {me ? <Link to="/stars">Stars</Link> : null}

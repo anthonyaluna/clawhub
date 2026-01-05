@@ -2,6 +2,9 @@
 
 ## 0.0.4 - Unreleased
 
+### Added
+- Web: `/skills` list view with sorting (newest/downloads/stars/name) + quick filter.
+
 ### Fixed
 - Web: skill detail shows a loading state instead of flashing "Skill not found".
 
