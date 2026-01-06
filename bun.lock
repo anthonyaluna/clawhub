@@ -18,7 +18,7 @@
         "@tanstack/react-router-devtools": "^1.144.0",
         "@tanstack/react-start": "^1.145.3",
         "@tanstack/router-plugin": "^1.145.2",
-        "clawdhub-schema": "^0.0.1",
+        "clawdhub-schema": "^0.0.2",
         "clsx": "^2.1.1",
         "convex": "^1.31.2",
         "fflate": "^0.8.2",
@@ -32,6 +32,7 @@
         "tailwind-merge": "^3.4.0",
         "tailwindcss": "^4.1.18",
         "vite-tsconfig-paths": "^6.0.3",
+        "yaml": "^2.8.2",
       },
       "devDependencies": {
         "@biomejs/biome": "^2.3.11",
@@ -54,13 +55,13 @@
     },
     "packages/clawdhub": {
       "name": "clawdhub",
-      "version": "0.0.1",
+      "version": "0.0.4",
       "bin": {
-        "clawdhub": "./bin/clawdhub.js",
+        "clawdhub": "bin/clawdhub.js",
       },
       "dependencies": {
         "@clack/prompts": "^0.11.0",
-        "clawdhub-schema": "^0.0.1",
+        "arktype": "^2.1.29",
         "commander": "^14.0.2",
         "fflate": "^0.8.2",
         "ignore": "^7.0.5",
@@ -76,7 +77,7 @@
     },
     "packages/schema": {
       "name": "clawdhub-schema",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "arktype": "^2.1.29",
       },
@@ -1299,6 +1300,8 @@
     "xmlchars": ["xmlchars@2.2.0", "", {}, "sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw=="],
 
     "yallist": ["yallist@3.1.1", "", {}, "sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g=="],
+
+    "yaml": ["yaml@2.8.2", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-mplynKqc1C2hTVYxd0PU2xQAc22TI1vShAYGksCCfxbn/dFwnHTNi1bvYsBTkhdUNtGIf5xNOg938rrSSYvS9A=="],
 
     "yoctocolors": ["yoctocolors@2.1.2", "", {}, "sha512-CzhO+pFNo8ajLM2d2IW/R93ipy99LWjtwblvC1RsoSUMZgyLbYFr221TnSNT7GjGdYui6P459mw9JH/g/zW2ug=="],
 

@@ -71,7 +71,7 @@ const skillVersions = defineTable({
     }),
   ),
   parsed: v.object({
-    frontmatter: v.record(v.string(), v.string()),
+    frontmatter: v.record(v.string(), v.any()),
     metadata: v.optional(v.any()),
     clawdis: v.optional(v.any()),
   }),

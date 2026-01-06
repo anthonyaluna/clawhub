@@ -15,8 +15,12 @@
 
 ## 0.0.5 - Unreleased
 
+### Added
+- Maintenance: admin backfill to re-parse `SKILL.md` and repair stored summaries/parsed metadata.
+
 ### Fixed
 - CLI sync: ignore plural `skills.md` docs files when scanning for skills.
+- Registry: parse YAML frontmatter (incl multiline `description`) and accept YAML `metadata` objects.
 
 ## 0.0.4 - 2026-01-05
 

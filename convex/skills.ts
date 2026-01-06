@@ -12,6 +12,7 @@ import {
 import { generateEmbedding } from './lib/embeddings'
 import {
   buildEmbeddingText,
+  getFrontmatterMetadata,
   getFrontmatterValue,
   isTextFile,
   parseClawdisMetadata,
@@ -221,8 +222,7 @@ export async function publishVersionForUser(
   const readmeText = await fetchText(ctx, readmeFile.storageId)
   const frontmatter = parseFrontmatter(readmeText)
   const clawdis = parseClawdisMetadata(frontmatter)
-  const metadataRaw = getFrontmatterValue(frontmatter, 'metadata')
-  const metadata = metadataRaw ? safeJson(metadataRaw) : undefined
+  const metadata = getFrontmatterMetadata(frontmatter)
 
   const otherFiles = [] as Array<{ path: string; content: string }>
   for (const file of sanitizedFiles) {
@@ -443,7 +443,7 @@ export const insertVersion = internalMutation({
       }),
     ),
     parsed: v.object({
-      frontmatter: v.record(v.string(), v.string()),
+      frontmatter: v.record(v.string(), v.any()),
       metadata: v.optional(v.any()),
       clawdis: v.optional(v.any()),
     }),
@@ -620,14 +620,6 @@ async function fetchText(
   const blob = await ctx.storage.get(storageId)
   if (!blob) throw new Error('File missing in storage')
   return blob.text()
-}
-
-function safeJson(value: string) {
-  try {
-    return JSON.parse(value)
-  } catch {
-    return undefined
-  }
 }
 
 function visibilityFor(isLatest: boolean, isApproved: boolean) {
