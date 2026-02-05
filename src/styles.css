@@ -2871,6 +2871,14 @@ html.theme-transition::view-transition-new(theme) {
   color: var(--accent);
 }
 
+.scan-disclaimer {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  opacity: 0.8;
+  margin: 8px 0 0;
+  font-style: italic;
+}
+
 /* Pending Review Banner */
 .pending-banner {
   font-size: 0.9rem;
@@ -2889,22 +2897,6 @@ html.theme-transition::view-transition-new(theme) {
   border-color: rgba(243, 201, 122, 0.35);
 }
 
-.pending-banner-icon {
-  font-size: 1.2rem;
-  flex-shrink: 0;
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
 .pending-banner-content strong {
   display: block;
   font-weight: 650;
@@ -2916,6 +2908,17 @@ html.theme-transition::view-transition-new(theme) {
   font-size: 0.85rem;
   line-height: 1.5;
   margin: 0;
+}
+
+/* Blocked/removed banner variant */
+.pending-banner-blocked {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+[data-theme="dark"] .pending-banner-blocked {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.35);
 }
 
 /* Pending tag for dashboard */

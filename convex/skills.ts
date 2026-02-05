@@ -505,14 +505,20 @@ export const getBySlug = query({
     const canonicalSkill = skill.canonicalSkillId ? await ctx.db.get(skill.canonicalSkillId) : null
     const canonicalOwner = canonicalSkill ? await ctx.db.get(canonicalSkill.ownerUserId) : null
 
-    // If owner, return skill even if pending (with status indicator)
+    // If owner, return skill with moderation status (so they can see why it's hidden)
     // If not owner, apply normal public filtering
     const publicSkill = toPublicSkill({ ...skill, badges })
-    const isPendingReview = skill.moderationStatus === 'hidden' && skill.moderationReason === 'pending.scan'
 
+    // Non-owners only see public skills
     if (!publicSkill && !isOwner) return null
 
-    // For owners viewing their pending skill, construct the response manually
+    // Determine moderation state for owners
+    const isPendingScan = skill.moderationStatus === 'hidden' && skill.moderationReason === 'pending.scan'
+    const isMalwareBlocked = skill.moderationFlags?.includes('blocked.malware') ?? false
+    const isHiddenByMod = skill.moderationStatus === 'hidden' && !isPendingScan
+    const isRemoved = skill.moderationStatus === 'removed'
+
+    // For owners viewing their moderated skill, construct the response manually
     const skillData = publicSkill ?? {
       _id: skill._id,
       _creationTime: skill._creationTime,
@@ -524,17 +530,27 @@ export const getBySlug = query({
       forkOf: skill.forkOf,
       latestVersionId: skill.latestVersionId,
       tags: skill.tags,
-      badges: skill.badges,
+      badges,
       stats: skill.stats,
       createdAt: skill.createdAt,
       updatedAt: skill.updatedAt,
     }
 
+    // Owner moderation info (only populated for owners of non-public skills)
+    const ownerModerationInfo = isOwner && !publicSkill ? {
+      isPendingScan,
+      isMalwareBlocked,
+      isHiddenByMod,
+      isRemoved,
+      reason: skill.moderationReason,
+    } : null
+
     return {
       skill: skillData,
       latestVersion,
       owner,
-      pendingReview: isOwner && isPendingReview,
+      pendingReview: isOwner && isPendingScan,
+      ownerModerationInfo,
       forkOf: forkOfSkill
         ? {
             kind: skill.forkOf?.kind ?? 'fork',
