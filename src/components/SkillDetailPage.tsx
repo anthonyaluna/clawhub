@@ -47,9 +47,8 @@ function VirusTotalIcon({ className }: { className?: string }) {
 function getScanStatusInfo(status: string) {
   switch (status.toLowerCase()) {
     case 'benign':
-      return { label: 'Undetected', className: 'scan-status-clean' }
     case 'clean':
-      return { label: 'Clean', className: 'scan-status-clean' }
+      return { label: 'Benign', className: 'scan-status-clean' }
     case 'malicious':
       return { label: 'Malicious', className: 'scan-status-malicious' }
     case 'suspicious':
@@ -125,18 +124,8 @@ function SecurityScanResults({
   const aiAnalysis = metadata?.aiAnalysis
 
   // Determine display label based on source
-  let displayLabel = statusInfo.label
-  if (!loading && metadata) {
-    if (isCodeInsight) {
-      // Code Insight detected - use the verdict label (Malicious, Suspicious, etc.)
-      displayLabel = statusInfo.label
-    } else if (metadata.stats) {
-      // Engine detection - show X/Y engines
-      const stats = metadata.stats
-      const total = Object.values(stats).reduce((acc, val) => acc + (val || 0), 0)
-      displayLabel = `${stats.malicious || 0}/${total} engines`
-    }
-  }
+  // Always prefer verdict labels (Benign, Suspicious, Malicious) over engine stats
+  const displayLabel = statusInfo.label
 
   if (variant === 'badge') {
     return (
