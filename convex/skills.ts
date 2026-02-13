@@ -14,7 +14,12 @@ import {
   query,
 } from './_generated/server'
 import { assertAdmin, assertModerator, requireUser, requireUserFromAction } from './lib/access'
-import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from './lib/badges'
+import {
+  getSkillBadgeMap,
+  getSkillBadgeMaps,
+  isSkillHighlighted,
+  type SkillBadgeMap,
+} from './lib/badges'
 import { generateChangelogPreview as buildChangelogPreview } from './lib/changelog'
 import { buildTrendingLeaderboard } from './lib/leaderboards'
 import { deriveModerationFlags } from './lib/moderation'
@@ -38,6 +43,7 @@ const MAX_LIST_LIMIT = 50
 const MAX_PUBLIC_LIST_LIMIT = 200
 const MAX_LIST_BULK_LIMIT = 200
 const MAX_LIST_TAKE = 1000
+const MAX_BADGE_LOOKUP_SKILLS = 200
 const HARD_DELETE_BATCH_SIZE = 100
 const HARD_DELETE_VERSION_BATCH_SIZE = 10
 const HARD_DELETE_LEADERBOARD_BATCH_SIZE = 25
@@ -361,8 +367,21 @@ async function hardDeleteSkillStep(
 
 type PublicSkillEntry = {
   skill: NonNullable<ReturnType<typeof toPublicSkill>>
-  latestVersion: Doc<'skillVersions'> | null
+  latestVersion: PublicSkillListVersion | null
   ownerHandle: string | null
+}
+
+type PublicSkillListVersion = Pick<
+  Doc<'skillVersions'>,
+  '_id' | '_creationTime' | 'version' | 'createdAt' | 'changelog' | 'changelogSource'
+> & {
+  parsed?: {
+    clawdis?: {
+      nix?: {
+        plugin?: boolean
+      }
+    }
+  }
 }
 
 type ManagementSkillEntry = {
@@ -375,10 +394,13 @@ type BadgeKind = Doc<'skillBadges'>['kind']
 
 async function buildPublicSkillEntries(ctx: QueryCtx, skills: Doc<'skills'>[]) {
   const ownerHandleCache = new Map<Id<'users'>, Promise<string | null>>()
-  const badgeMapBySkillId = await getSkillBadgeMaps(
-    ctx,
-    skills.map((skill) => skill._id),
-  )
+  const badgeMapBySkillId: Map<Id<'skills'>, SkillBadgeMap> = skills.length <=
+  MAX_BADGE_LOOKUP_SKILLS
+    ? await getSkillBadgeMaps(
+        ctx,
+        skills.map((skill) => skill._id),
+      )
+    : new Map()
 
   const getOwnerHandle = (ownerUserId: Id<'users'>) => {
     const cached = ownerHandleCache.get(ownerUserId)
@@ -390,18 +412,34 @@ async function buildPublicSkillEntries(ctx: QueryCtx, skills: Doc<'skills'>[]) {
 
   const entries = await Promise.all(
     skills.map(async (skill) => {
-      const [latestVersion, ownerHandle] = await Promise.all([
+      const [latestVersionDoc, ownerHandle] = await Promise.all([
         skill.latestVersionId ? ctx.db.get(skill.latestVersionId) : null,
         getOwnerHandle(skill.ownerUserId),
       ])
       const badges = badgeMapBySkillId.get(skill._id) ?? {}
       const publicSkill = toPublicSkill({ ...skill, badges })
       if (!publicSkill) return null
+      const latestVersion = toPublicSkillListVersion(latestVersionDoc)
       return { skill: publicSkill, latestVersion, ownerHandle }
     }),
   )
 
   return entries.filter((entry): entry is PublicSkillEntry => entry !== null)
+}
+
+function toPublicSkillListVersion(
+  version: Doc<'skillVersions'> | null,
+): PublicSkillListVersion | null {
+  if (!version) return null
+  return {
+    _id: version._id,
+    _creationTime: version._creationTime,
+    version: version.version,
+    createdAt: version.createdAt,
+    changelog: version.changelog,
+    changelogSource: version.changelogSource,
+    parsed: version.parsed?.clawdis ? { clawdis: version.parsed.clawdis } : undefined,
+  }
 }
 
 async function buildManagementSkillEntries(ctx: QueryCtx, skills: Doc<'skills'>[]) {
@@ -1335,6 +1373,10 @@ export const listPublicPageV2 = query({
   handler: async (ctx, args) => {
     const sort = args.sort ?? 'newest'
     const dir = args.dir ?? 'desc'
+    const paginationOpts = {
+      ...args.paginationOpts,
+      numItems: clampInt(args.paginationOpts.numItems, 1, MAX_PUBLIC_LIST_LIMIT),
+    }
 
     // Use the index to filter out soft-deleted skills at query time.
     // softDeletedAt === undefined means active (non-deleted) skills only.
@@ -1342,7 +1384,7 @@ export const listPublicPageV2 = query({
       .query('skills')
       .withIndex(SORT_INDEXES[sort], (q) => q.eq('softDeletedAt', undefined))
       .order(dir)
-      .paginate(args.paginationOpts)
+      .paginate(paginationOpts)
 
     // Build the public skill entries (fetch latestVersion + ownerHandle)
     const items = await buildPublicSkillEntries(ctx, result.page)
@@ -1439,56 +1481,31 @@ export const getSkillByIdInternal = internalQuery({
 export const getPendingScanSkillsInternal = internalQuery({
   args: { limit: v.optional(v.number()), skipRecentMinutes: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 10
+    const limit = clampInt(args.limit ?? 10, 1, 100)
     const skipRecentMinutes = args.skipRecentMinutes ?? 60
     const skipThreshold = Date.now() - skipRecentMinutes * 60 * 1000
 
-    // Fetch more than needed so we can randomize selection.
-    // Include newly-published skills (hidden/pending.scan), skills stuck at
-    // scanner.vt.pending, AND LLM-evaluated skills that still need VT results.
-    const poolSize = Math.min(limit * 3, 500)
-    const pendingScan = await ctx.db
+    // Use an indexed query and bounded scan to avoid full-table reads under spam/high volume.
+    const poolSize = Math.min(Math.max(limit * 20, 200), 1000)
+    const allSkills = await ctx.db
       .query('skills')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('moderationStatus'), 'hidden'),
-          q.eq(q.field('moderationReason'), 'pending.scan'),
-        ),
-      )
-      .take(poolSize)
-    const vtPending = await ctx.db
-      .query('skills')
-      .filter((q) =>
-        q.and(
-          q.eq(q.field('moderationStatus'), 'active'),
-          q.eq(q.field('moderationReason'), 'scanner.vt.pending'),
-        ),
-      )
-      .take(poolSize)
-    // LLM-evaluated skills whose VT scan hasn't completed yet
-    const llmEvaluated = await ctx.db
-      .query('skills')
-      .filter((q) =>
-        q.or(
-          q.eq(q.field('moderationReason'), 'scanner.llm.clean'),
-          q.eq(q.field('moderationReason'), 'scanner.llm.suspicious'),
-          q.eq(q.field('moderationReason'), 'scanner.llm.malicious'),
-        ),
-      )
+      .withIndex('by_active_updated', (q) => q.eq('softDeletedAt', undefined))
+      .order('desc')
       .take(poolSize)
 
-    // Dedup across pools by skill ID
-    const seen = new Set<string>()
-    const allSkills: typeof pendingScan = []
-    for (const skill of [...pendingScan, ...vtPending, ...llmEvaluated]) {
-      if (!seen.has(skill._id)) {
-        seen.add(skill._id)
-        allSkills.push(skill)
-      }
-    }
+    const candidates = allSkills.filter((skill) => {
+      const reason = skill.moderationReason
+      if (skill.moderationStatus === 'hidden' && reason === 'pending.scan') return true
+      if (skill.moderationStatus === 'active' && reason === 'scanner.vt.pending') return true
+      return (
+        reason === 'scanner.llm.clean' ||
+        reason === 'scanner.llm.suspicious' ||
+        reason === 'scanner.llm.malicious'
+      )
+    })
 
     // Filter out recently checked skills
-    const skills = allSkills.filter(
+    const skills = candidates.filter(
       (s) => !s.scanLastCheckedAt || s.scanLastCheckedAt < skipThreshold,
     )
 

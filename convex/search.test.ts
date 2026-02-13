@@ -20,7 +20,10 @@ vi.mock('./lib/badges', () => ({
 }))
 
 type WrappedHandler = {
-  _handler: (ctx: unknown, args: unknown) => Promise<unknown>
+  _handler: (
+    ctx: unknown,
+    args: unknown,
+  ) => Promise<Array<{ skill: { slug: string; _id: string } }>>
 }
 
 const searchSkillsHandler = (searchSkills as unknown as WrappedHandler)._handler

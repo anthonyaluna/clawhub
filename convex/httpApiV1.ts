@@ -845,11 +845,24 @@ async function checkRateLimit(
   }
 
   // Step 2: Consume a token (only when allowed, with double-check for races)
-  const result = (await ctx.runMutation(internal.rateLimits.consumeRateLimitInternal, {
-    key,
-    limit,
-    windowMs: RATE_LIMIT_WINDOW_MS,
-  })) as { allowed: boolean; remaining: number }
+  let result: { allowed: boolean; remaining: number }
+  try {
+    result = (await ctx.runMutation(internal.rateLimits.consumeRateLimitInternal, {
+      key,
+      limit,
+      windowMs: RATE_LIMIT_WINDOW_MS,
+    })) as { allowed: boolean; remaining: number }
+  } catch (error) {
+    if (isRateLimitWriteConflict(error)) {
+      return {
+        allowed: false,
+        remaining: 0,
+        limit: status.limit,
+        resetAt: status.resetAt,
+      }
+    }
+    throw error
+  }
 
   return {
     allowed: result.allowed,
@@ -936,7 +949,21 @@ function splitFirstIp(header: string | null) {
 }
 
 function shouldTrustForwardedIps() {
-  return String(process.env.TRUST_FORWARDED_IPS ?? '').toLowerCase() === 'true'
+  const value = String(process.env.TRUST_FORWARDED_IPS ?? '')
+    .trim()
+    .toLowerCase()
+  if (!value) return true
+  if (value === '1' || value === 'true' || value === 'yes') return true
+  if (value === '0' || value === 'false' || value === 'no') return false
+  return false
+}
+
+function isRateLimitWriteConflict(error: unknown) {
+  if (!(error instanceof Error)) return false
+  return (
+    error.message.includes('rateLimits') &&
+    error.message.includes('changed while this mutation was being run')
+  )
 }
 
 function getPathSegments(request: Request, prefix: string) {

@@ -19,6 +19,7 @@ const sortKeys = [
 ] as const
 const pageSize = 25
 type SortKey = (typeof sortKeys)[number]
+type ListSortKey = Exclude<SortKey, 'relevance'>
 type SortDir = 'asc' | 'desc'
 
 function parseSort(value: unknown): SortKey {
@@ -32,9 +33,25 @@ function parseDir(value: unknown, sort: SortKey): SortDir {
   return sort === 'name' ? 'asc' : 'desc'
 }
 
+function toListSort(sort: SortKey): ListSortKey {
+  return sort === 'relevance' ? 'newest' : sort
+}
+
 type SkillListEntry = {
   skill: PublicSkill
-  latestVersion: Doc<'skillVersions'> | null
+  latestVersion: {
+    version: string
+    createdAt: number
+    changelog: string
+    changelogSource?: 'auto' | 'user'
+    parsed?: {
+      clawdis?: {
+        nix?: {
+          plugin?: boolean
+        }
+      }
+    }
+  } | null
   ownerHandle?: string | null
   searchScore?: number
 }
@@ -89,6 +106,7 @@ export function SkillsIndex() {
     search.sort === 'relevance' && !hasQuery
       ? 'newest'
       : (search.sort ?? (hasQuery ? 'relevance' : 'newest'))
+  const listSort = toListSort(sort)
   const dir = parseDir(search.dir, sort)
   const searchKey = trimmedQuery ? `${trimmedQuery}::${highlightedOnly ? '1' : '0'}` : ''
 
@@ -97,7 +115,7 @@ export function SkillsIndex() {
     results: paginatedResults,
     status: paginationStatus,
     loadMore: loadMorePaginated,
-  } = usePaginatedQuery(api.skills.listPublicPageV2, hasQuery ? 'skip' : { sort, dir }, {
+  } = usePaginatedQuery(api.skills.listPublicPageV2, hasQuery ? 'skip' : { sort: listSort, dir }, {
     initialNumItems: pageSize,
   })
 

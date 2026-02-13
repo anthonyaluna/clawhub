@@ -20,6 +20,7 @@ export const Route = createFileRoute('/search')({
           dir: undefined,
           highlighted: search.highlighted || undefined,
           view: undefined,
+          focus: undefined,
         },
         replace: true,
       })

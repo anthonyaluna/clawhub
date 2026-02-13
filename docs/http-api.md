@@ -27,8 +27,8 @@ Headers:
 
 IP source:
 
-- Uses `cf-connecting-ip` by default.
-- Set `TRUST_FORWARDED_IPS=true` to allow fallback to `x-real-ip`, `x-forwarded-for`, or `fly-client-ip` (non-Cloudflare deployments).
+- Uses `cf-connecting-ip` first, then falls back to `x-real-ip`, `x-forwarded-for`, or `fly-client-ip`.
+- Set `TRUST_FORWARDED_IPS=false` to disable forwarded-header fallback.
 
 ## Public endpoints (no auth)
 

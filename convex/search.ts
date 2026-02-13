@@ -216,7 +216,7 @@ export const hydrateResults = internalQuery({
       return handlePromise
     }
 
-    const entries = await Promise.all(
+    const entries: Array<SkillSearchEntry | null> = await Promise.all(
       args.embeddingIds.map(async (embeddingId) => {
         const embedding = await ctx.db.get(embeddingId)
         if (!embedding) return null
