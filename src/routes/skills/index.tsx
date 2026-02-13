@@ -80,6 +80,7 @@ export function SkillsIndex() {
   const [isSearching, setIsSearching] = useState(false)
   const searchRequest = useRef(0)
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
+  const loadMoreInFlightRef = useRef(false)
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const trimmedQuery = useMemo(() => query.trim(), [query])
@@ -211,7 +212,8 @@ export function SkillsIndex() {
   const canAutoLoad = typeof IntersectionObserver !== 'undefined'
 
   const loadMore = useCallback(() => {
-    if (isLoadingMore || !canLoadMore) return
+    if (loadMoreInFlightRef.current || isLoadingMore || !canLoadMore) return
+    loadMoreInFlightRef.current = true
     if (hasQuery) {
       setSearchLimit((value) => value + pageSize)
     } else {
@@ -220,12 +222,19 @@ export function SkillsIndex() {
   }, [canLoadMore, hasQuery, isLoadingMore, loadMorePaginated])
 
   useEffect(() => {
+    if (!isLoadingMore) {
+      loadMoreInFlightRef.current = false
+    }
+  }, [isLoadingMore])
+
+  useEffect(() => {
     if (!canLoadMore || typeof IntersectionObserver === 'undefined') return
     const target = loadMoreRef.current
     if (!target) return
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
+          observer.disconnect()
           loadMore()
         }
       },
