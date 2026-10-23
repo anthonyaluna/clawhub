@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import pRetry, { AbortError } from "p-retry";
 import { Agent, EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+// Use the npm encoder, not Bun's built-in `undici` alias/native FormData encoder.
+import { FormData as MultipartFormData, Response as MultipartResponse } from "undici/index.js";
 import type { ArkValidator } from "./schema/index.js";
 import { ApiRoutes, parseArk } from "./schema/index.js";
 
@@ -704,13 +706,7 @@ async function fetchJsonViaCurl(
 async function fetchJsonFormViaCurl(
   deps: Pick<
     HttpClientDeps,
-    | "spawnSyncImpl"
-    | "mkdtempImpl"
-    | "mkdirImpl"
-    | "writeFileImpl"
-    | "rmImpl"
-    | "tmpdirPath"
-    | "now"
+    "spawnSyncImpl" | "mkdtempImpl" | "writeFileImpl" | "rmImpl" | "tmpdirPath" | "now"
   >,
   url: string,
   args: FormRequestArgs,
@@ -720,19 +716,23 @@ async function fetchJsonFormViaCurl(
 
   const tempDir = await deps.mkdtempImpl(join(deps.tmpdirPath, "clawhub-upload-"));
   try {
-    const formArgs: string[] = [];
+    // Encode literal multipart data, not curl's interpreting -F grammar.
+    // Display filenames stay in the body and never select local staging paths.
+    const form = new MultipartFormData();
     for (const [key, value] of args.form.entries()) {
       if (value instanceof Blob) {
         const filename = typeof (value as File).name === "string" ? (value as File).name : "file";
-        const filePath = join(tempDir, filename);
-        const bytes = new Uint8Array(await value.arrayBuffer());
-        await deps.mkdirImpl(dirname(filePath), { recursive: true });
-        await deps.writeFileImpl(filePath, bytes);
-        formArgs.push("-F", `${key}=@${filePath};filename=${filename}`);
+        form.append(key, value, filename);
       } else {
-        formArgs.push("-F", `${key}=${value}`);
+        form.append(key, value);
       }
     }
+    const multipart = new MultipartResponse(form);
+    const contentType = multipart.headers.get("Content-Type");
+    if (!contentType) throw new Error("Unable to encode multipart form");
+    const filePath = join(tempDir, "multipart.bin");
+    await deps.writeFileImpl(filePath, new Uint8Array(await multipart.arrayBuffer()));
+    headers.push("-H", `Content-Type: ${contentType}`);
 
     const curlArgs = [
       "--silent",
@@ -745,7 +745,8 @@ async function fetchJsonFormViaCurl(
       "-X",
       args.method,
       ...headers,
-      ...formArgs,
+      "--data-binary",
+      `@${filePath}`,
       url,
     ];
 
