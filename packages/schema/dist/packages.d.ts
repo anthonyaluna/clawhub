@@ -226,6 +226,8 @@ export declare const PackageTrustedPublisherSchema: import("arktype/internal/var
     repositoryOwner: string;
     repositoryOwnerId: string;
     workflowFilename: string;
+    ref?: string | undefined;
+    reusableWorkflowRef?: string | undefined;
     environment?: string | undefined;
 }, {}>;
 export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
@@ -1055,6 +1057,8 @@ export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSch
 export declare const PackageTrustedPublisherUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     repository: string;
     workflowFilename: string;
+    ref: string;
+    reusableWorkflowRef?: string | undefined;
     environment?: string | undefined;
 }, {}>;
 export type PackageTrustedPublisherUpsertRequest = (typeof PackageTrustedPublisherUpsertRequestSchema)[inferred];
@@ -1066,6 +1070,8 @@ export declare const ApiV1PackageTrustedPublisherResponseSchema: import("arktype
         repositoryOwner: string;
         repositoryOwnerId: string;
         workflowFilename: string;
+        ref?: string | undefined;
+        reusableWorkflowRef?: string | undefined;
         environment?: string | undefined;
     } | null;
 }, {}>;

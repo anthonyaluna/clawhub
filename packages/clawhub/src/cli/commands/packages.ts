@@ -1396,6 +1396,9 @@ function printTrustedPublisher(trustedPublisher: PackageTrustedPublisher) {
   console.log(`Provider: ${trustedPublisher.provider}`);
   console.log(`Repository: ${trustedPublisher.repository}`);
   console.log(`Workflow: ${trustedPublisher.workflowFilename}`);
+  console.log(`Ref: ${trustedPublisher.ref ?? "<unset; publishing disabled>"}`);
+  if (trustedPublisher.reusableWorkflowRef)
+    console.log(`Reusable workflow ref: ${trustedPublisher.reusableWorkflowRef}`);
   if (trustedPublisher.environment) {
     console.log(`Environment: ${trustedPublisher.environment}`);
   }

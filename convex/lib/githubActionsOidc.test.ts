@@ -14,6 +14,7 @@ const trustedPublisher: TrustedGitHubActionsPublisher = {
   repositoryOwner: "openclaw",
   repositoryOwnerId: "7890",
   workflowFilename: "plugin-clawhub-release.yml",
+  ref: "refs/heads/main",
   environment: "clawhub-plugin-release",
 };
 const trustedPublisherWithoutEnvironment: TrustedGitHubActionsPublisher = {
@@ -126,6 +127,139 @@ describe("fetchGitHubRepositoryIdentity", () => {
 });
 
 describe("verifyGitHubActionsTrustedPublishJwt", () => {
+  it.each([
+    {
+      label: "workflow code on another branch",
+      claims: {
+        workflow_ref:
+          "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/attacker",
+      },
+      config: {},
+    },
+    {
+      label: "dispatch ref differs from approved workflow ref",
+      claims: { ref: "refs/heads/attacker" },
+      config: {},
+    },
+    {
+      label: "unapproved workflow and dispatch ref",
+      claims: {
+        ref: "refs/heads/attacker",
+        workflow_ref:
+          "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/attacker",
+      },
+      config: {},
+    },
+    { label: "legacy config without approved ref", claims: {}, config: { ref: undefined } },
+    { label: "wildcard config", claims: {}, config: { ref: "refs/heads/*" } },
+    {
+      label: "mutable reusable workflow ref",
+      claims: {
+        job_workflow_ref: "openclaw/clawhub/.github/workflows/package-publish.yml@refs/heads/main",
+      },
+      config: { reusableWorkflowRef: "a".repeat(40) },
+    },
+    {
+      label: "different reusable workflow commit",
+      claims: {
+        job_workflow_ref: `openclaw/clawhub/.github/workflows/package-publish.yml@${"b".repeat(40)}`,
+      },
+      config: { reusableWorkflowRef: "a".repeat(40) },
+    },
+    {
+      label: "unapproved reusable workflow",
+      claims: {
+        job_workflow_ref: `openclaw/clawhub/.github/workflows/package-publish.yml@${"a".repeat(40)}`,
+      },
+      config: {},
+    },
+    {
+      label: "pinned reusable workflow omitted",
+      claims: {},
+      config: { reusableWorkflowRef: "a".repeat(40) },
+    },
+    {
+      label: "invalid reusable workflow pin",
+      claims: {
+        job_workflow_ref: "openclaw/clawhub/.github/workflows/package-publish.yml@refs/heads/main",
+      },
+      config: { reusableWorkflowRef: "refs/heads/main" },
+    },
+    {
+      label: "extra workflow-ref suffix",
+      claims: {
+        workflow_ref:
+          "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main@extra",
+      },
+      config: {},
+    },
+  ])("rejects $label", async ({ claims, config }) => {
+    const { token, jwks } = await createSignedToken({
+      repository: trustedPublisher.repository,
+      repository_id: trustedPublisher.repositoryId,
+      repository_owner: trustedPublisher.repositoryOwner,
+      repository_owner_id: trustedPublisher.repositoryOwnerId,
+      workflow_ref:
+        "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
+      runner_environment: "github-hosted",
+      environment: trustedPublisher.environment,
+      event_name: "workflow_dispatch",
+      workflow: "Plugin ClawHub Release",
+      sha: "deadbeef",
+      ref: "refs/heads/main",
+      run_id: "100",
+      run_attempt: "1",
+      iss: "https://token.actions.githubusercontent.com",
+      aud: "clawhub",
+      exp: Math.floor(Date.now() / 1000) + 300,
+      iat: Math.floor(Date.now() / 1000) - 5,
+      ...claims,
+    });
+    await expect(
+      verifyGitHubActionsTrustedPublishJwt(
+        token,
+        { ...trustedPublisher, ...config },
+        {
+          fetchImpl: async () => Response.json({ keys: [jwks] }),
+        },
+      ),
+    ).rejects.toThrow(/ref|workflow/i);
+  });
+
+  it.each(["refs/heads/release/stable", "refs/tags/v1.2.3"])(
+    "accepts an explicitly approved %s",
+    async (ref) => {
+      const { token, jwks } = await createSignedToken({
+        repository: trustedPublisher.repository,
+        repository_id: trustedPublisher.repositoryId,
+        repository_owner: trustedPublisher.repositoryOwner,
+        repository_owner_id: trustedPublisher.repositoryOwnerId,
+        workflow_ref: `openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@${ref}`,
+        runner_environment: "github-hosted",
+        environment: trustedPublisher.environment,
+        event_name: "workflow_dispatch",
+        workflow: "Plugin ClawHub Release",
+        sha: "deadbeef",
+        ref,
+        run_id: "100",
+        run_attempt: "1",
+        iss: "https://token.actions.githubusercontent.com",
+        aud: "clawhub",
+        exp: Math.floor(Date.now() / 1000) + 300,
+        iat: Math.floor(Date.now() / 1000) - 5,
+      });
+      await expect(
+        verifyGitHubActionsTrustedPublishJwt(
+          token,
+          { ...trustedPublisher, ref },
+          {
+            fetchImpl: async () => Response.json({ keys: [jwks] }),
+          },
+        ),
+      ).resolves.toMatchObject({ ref });
+    },
+  );
+
   it("accepts a valid GitHub Actions token", async () => {
     const { token, jwks } = await createSignedToken({
       repository: trustedPublisher.repository,
@@ -264,7 +398,7 @@ describe("verifyGitHubActionsTrustedPublishJwt", () => {
       repository_owner_id: trustedPublisher.repositoryOwnerId,
       workflow_ref:
         "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
-      job_workflow_ref: "openclaw/clawhub/.github/workflows/package-publish.yml@refs/heads/main",
+      job_workflow_ref: `openclaw/clawhub/.github/workflows/package-publish.yml@${"a".repeat(40)}`,
       runner_environment: "github-hosted",
       environment: trustedPublisher.environment,
       event_name: "workflow_dispatch",
@@ -280,17 +414,21 @@ describe("verifyGitHubActionsTrustedPublishJwt", () => {
     });
 
     await expect(
-      verifyGitHubActionsTrustedPublishJwt(token, trustedPublisher, {
-        fetchImpl: async () =>
-          new Response(JSON.stringify({ keys: [jwks] }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-      }),
+      verifyGitHubActionsTrustedPublishJwt(
+        token,
+        { ...trustedPublisher, reusableWorkflowRef: "a".repeat(40) },
+        {
+          fetchImpl: async () =>
+            new Response(JSON.stringify({ keys: [jwks] }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+        },
+      ),
     ).resolves.toMatchObject({
       repository: trustedPublisher.repository,
       workflowFilename: trustedPublisher.workflowFilename,
-      jobWorkflowRef: "openclaw/clawhub/.github/workflows/package-publish.yml@refs/heads/main",
+      jobWorkflowRef: `openclaw/clawhub/.github/workflows/package-publish.yml@${"a".repeat(40)}`,
     });
   });
 
