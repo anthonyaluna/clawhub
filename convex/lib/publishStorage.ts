@@ -20,9 +20,23 @@ export async function verifyPublishFiles<TFile extends PublishFile>(
   return files.map((file, index) => {
     const stored = metadata[index];
     if (!stored) throw new ConvexError(`File "${file.path}" missing in storage`);
-    if (file.size !== stored.size || file.sha256.toLowerCase() !== stored.sha256) {
+    const sha256 = storageDigestToHex(stored.sha256);
+    if (file.size !== stored.size || file.sha256.toLowerCase() !== sha256) {
       throw new ConvexError(`File "${file.path}" metadata does not match stored content`);
     }
-    return { ...file, size: stored.size, sha256: stored.sha256 };
+    return { ...file, size: stored.size, sha256 };
   });
+}
+
+function storageDigestToHex(digest: string) {
+  // Convex's _storage virtual table uses base64 for SDK versions >= 1.9.0.
+  // The legacy publish API and its existing clients use hex.
+  let bytes: string;
+  try {
+    bytes = atob(digest);
+  } catch {
+    throw new ConvexError("Invalid file digest in storage");
+  }
+  if (bytes.length !== 32) throw new ConvexError("Invalid file digest in storage");
+  return Array.from(bytes, (byte) => byte.charCodeAt(0).toString(16).padStart(2, "0")).join("");
 }

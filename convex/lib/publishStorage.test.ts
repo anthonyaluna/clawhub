@@ -100,7 +100,7 @@ describe.each(["skill", "soul"] as const)("%s stored-file integrity", (kind) => 
       _id: file.storageId,
       _creationTime: 1,
       size: 5,
-      sha256: HELLO_SHA256,
+      sha256: "LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=",
       contentType: "text/markdown",
     };
     const stored = new Map([[file.storageId, metadata]]);
@@ -166,6 +166,23 @@ describe.each(["skill", "soul"] as const)("%s stored-file integrity", (kind) => 
       .update(`${file.path}:${HELLO_SHA256}`)
       .digest("hex");
     expect(versions[0].fingerprint).toBe(expectedFingerprint);
+  });
+
+  it("accepts the Convex backend's base64 storage digest and persists client hex", async () => {
+    const { ctx, file, metadata, versions } = fixture();
+    metadata.sha256 = "LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=";
+    await publish(ctx, [file]);
+    expect(versions[0].files).toEqual([file]);
+  });
+
+  it("rejects a forged client digest when stored metadata uses base64", async () => {
+    const { ctx, file, metadata, reads, versions } = fixture();
+    metadata.sha256 = "LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=";
+    await expect(publish(ctx, [{ ...file, sha256: "f".repeat(64) }])).rejects.toThrow(
+      /metadata.*match/i,
+    );
+    expect(reads).toEqual([]);
+    expect(versions).toEqual([]);
   });
 
   it("enforces the existing bundle limit using authoritative metadata", async () => {
