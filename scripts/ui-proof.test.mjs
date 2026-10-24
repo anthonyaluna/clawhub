@@ -96,11 +96,11 @@ describe("ui-proof", () => {
 
     expect(plan.mode).toBe("before-after");
     expect(plan.outputDir).toBe(
-      "/repo/clawhub/.artifacts/clawhub-ui-proof/2026-05-12T12-34-56-000Z",
+      path.resolve("/repo/clawhub/.artifacts/clawhub-ui-proof/2026-05-12T12-34-56-000Z"),
     );
     expect(plan.lanes.map((lane) => [lane.name, lane.ref, lane.outputDir])).toEqual([
-      ["baseline", "origin/main", `${plan.outputDir}/baseline`],
-      ["candidate", "worktree", `${plan.outputDir}/candidate`],
+      ["baseline", "origin/main", path.join(plan.outputDir, "baseline")],
+      ["candidate", "worktree", path.join(plan.outputDir, "candidate")],
     ]);
   });
 
@@ -118,7 +118,7 @@ describe("ui-proof", () => {
 
     expect(plan.mode).toBe("feature");
     expect(plan.lanes.map((lane) => [lane.name, lane.ref, lane.outputDir])).toEqual([
-      ["candidate", "worktree", `${plan.outputDir}/candidate`],
+      ["candidate", "worktree", path.join(plan.outputDir, "candidate")],
     ]);
   });
 
