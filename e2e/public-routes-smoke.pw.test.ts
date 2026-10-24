@@ -33,7 +33,10 @@ function seedApiUrl(path: string) {
 }
 
 async function fetchSeedFixtures(request: APIRequestContext): Promise<SeedFixtures> {
-  const skillPath = "/api/v1/skills/gifgrep";
+  // Keep the legacy route fixture globally unique while public namespaces evolve.
+  const configuredSlug = process.env.CLAWHUB_E2E_SKILL_SLUG?.trim() || "xrowgmbh-gitlab-hackathon";
+  const configuredOwner = process.env.CLAWHUB_E2E_SKILL_OWNER?.trim() || "xrowgmbh";
+  const skillPath = `/api/v1/skills/${encodeURIComponent(configuredSlug)}?${new URLSearchParams({ owner: configuredOwner })}`;
   const skillResponse = await request.get(seedApiUrl(skillPath));
   expect(
     skillResponse.ok(),
@@ -46,9 +49,11 @@ async function fetchSeedFixtures(request: APIRequestContext): Promise<SeedFixtur
   const ownerHandle = skillPayload.owner?.handle?.trim();
   const skillSlug = skillPayload.skill?.slug?.trim();
   const skillDisplayName = skillPayload.skill?.displayName?.trim();
-  expect(ownerHandle, "gifgrep seed fixture needs an owner handle").toBeTruthy();
-  expect(skillSlug, "gifgrep seed fixture needs a slug").toBeTruthy();
-  expect(skillDisplayName, "gifgrep seed fixture needs a display name").toBeTruthy();
+  expect(ownerHandle, "seed skill fixture needs an owner handle").toBeTruthy();
+  expect(skillSlug, "seed skill fixture needs a slug").toBeTruthy();
+  expect(skillDisplayName, "seed skill fixture needs a display name").toBeTruthy();
+  expect(ownerHandle?.toLowerCase()).toBe(configuredOwner.toLowerCase());
+  expect(skillSlug).toBe(configuredSlug);
 
   const pluginPath = "/api/v1/plugins?limit=1";
   const pluginResponse = await request.get(seedApiUrl(pluginPath));

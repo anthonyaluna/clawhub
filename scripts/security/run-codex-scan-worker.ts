@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { basename, dirname, join, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -108,7 +108,7 @@ const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
 const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 
-const root = resolve(new URL("../..", import.meta.url).pathname);
+const root = fileURLToPath(new URL("../..", import.meta.url));
 const schemaPath = join(root, "scripts/security/codex-scan-output.schema.json");
 const DEFAULT_DIAGNOSTICS_ROOT = join(
   root,
@@ -392,7 +392,7 @@ function safeOutputPath(workspace: string, artifactPath: string) {
   const normalized = artifactPath.replace(/^\/+/, "");
   const out = resolve(workspace, "artifact", normalized);
   const artifactRoot = resolve(workspace, "artifact");
-  if (!out.startsWith(`${artifactRoot}/`) && out !== artifactRoot) {
+  if (!out.startsWith(`${artifactRoot}${sep}`) && out !== artifactRoot) {
     throw new Error(`Unsafe artifact path: ${artifactPath}`);
   }
   return out;
