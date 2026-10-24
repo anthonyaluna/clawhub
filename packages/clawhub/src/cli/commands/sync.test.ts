@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
@@ -18,11 +19,11 @@ const mocked = <T>(value: T) =>
   value as T & { mockImplementation: (...args: unknown[]) => unknown };
 
 const defaultFindSkillFolders = async (root: string) => {
-  if (!root.endsWith("/scan")) return [];
+  if (!root.endsWith(resolve("/scan"))) return [];
   return [
-    { folder: "/scan/new-skill", slug: "new-skill", displayName: "New Skill" },
-    { folder: "/scan/synced-skill", slug: "synced-skill", displayName: "Synced Skill" },
-    { folder: "/scan/update-skill", slug: "update-skill", displayName: "Update Skill" },
+    { folder: resolve("/scan/new-skill"), slug: "new-skill", displayName: "New Skill" },
+    { folder: resolve("/scan/synced-skill"), slug: "synced-skill", displayName: "Synced Skill" },
+    { folder: resolve("/scan/update-skill"), slug: "update-skill", displayName: "Update Skill" },
   ];
 };
 
@@ -138,7 +139,7 @@ describe("cmdSync", () => {
       throw new Error(`Unexpected apiRequest: ${args.path}`);
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: true }, true);
+    await cmdSync(makeOpts(), { root: [resolve("/scan")], all: true, dryRun: true }, true);
 
     expect(mockCmdPublish).not.toHaveBeenCalled();
 
@@ -175,7 +176,7 @@ describe("cmdSync", () => {
       await cmdSync(
         makeOpts(),
         {
-          root: ["/scan"],
+          root: [resolve("/scan")],
           all: true,
           dryRun: true,
           json: true,
@@ -253,7 +254,11 @@ describe("cmdSync", () => {
       throw new Error(`Unexpected apiRequest: ${args.path}`);
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: false, dryRun: false, bump: "patch" }, true);
+    await cmdSync(
+      makeOpts(),
+      { root: [resolve("/scan")], all: false, dryRun: false, bump: "patch" },
+      true,
+    );
 
     const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
     expect(output).toMatch(/To sync/);
@@ -270,13 +275,17 @@ describe("cmdSync", () => {
 
   it("passes owner and source provenance into real bulk publishes", async () => {
     interactive = false;
-    const opts = makeGlobalOpts("/repo");
+    const opts = makeGlobalOpts(resolve("/repo"));
     const { findSkillFolders } = await import("../scanSkills.js");
     mocked(findSkillFolders).mockImplementation(async (root: string) => {
-      if (root !== "/repo/skills") return [];
+      if (root !== resolve("/repo/skills")) return [];
       return [
-        { folder: "/repo/skills/new-skill", slug: "new-skill", displayName: "New Skill" },
-        { folder: "/repo/skills/update-skill", slug: "update-skill", displayName: "Update Skill" },
+        { folder: resolve("/repo/skills/new-skill"), slug: "new-skill", displayName: "New Skill" },
+        {
+          folder: resolve("/repo/skills/update-skill"),
+          slug: "update-skill",
+          displayName: "Update Skill",
+        },
       ];
     });
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
@@ -296,7 +305,7 @@ describe("cmdSync", () => {
     await cmdSync(
       opts,
       {
-        root: ["/repo/skills"],
+        root: [resolve("/repo/skills")],
         all: true,
         dryRun: false,
         owner: "nvidia",
@@ -335,11 +344,11 @@ describe("cmdSync", () => {
 
   it("uses dot source path for a root skill publish", async () => {
     interactive = false;
-    const opts = makeGlobalOpts("/repo");
+    const opts = makeGlobalOpts(resolve("/repo"));
     const { findSkillFolders } = await import("../scanSkills.js");
     mocked(findSkillFolders).mockImplementation(async (root: string) => {
-      if (root !== "/repo") return [];
-      return [{ folder: "/repo", slug: "root-skill", displayName: "Root Skill" }];
+      if (root !== resolve("/repo")) return [];
+      return [{ folder: resolve("/repo"), slug: "root-skill", displayName: "Root Skill" }];
     });
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "mikehollinger" } };
@@ -391,7 +400,7 @@ describe("cmdSync", () => {
       throw new Error(`Unexpected apiRequest: ${args.path}`);
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: true }, true);
+    await cmdSync(makeOpts(), { root: [resolve("/scan")], all: true, dryRun: true }, true);
 
     const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
     expect(output).toMatch(/update-skill\s+LOCAL CHANGES latest 1\.0\.0; publish 1\.0\.1/);
@@ -410,7 +419,7 @@ describe("cmdSync", () => {
       throw new Error(`Unexpected apiRequest: ${args.path}`);
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false }, true);
+    await cmdSync(makeOpts(), { root: [resolve("/scan")], all: true, dryRun: false }, true);
 
     const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
     expect(output).toMatch(/Already synced/);
@@ -426,10 +435,10 @@ describe("cmdSync", () => {
     interactive = false;
     const { findSkillFolders } = await import("../scanSkills.js");
     mocked(findSkillFolders).mockImplementation(async (root: string) => {
-      if (!root.endsWith("/scan")) return [];
+      if (!root.endsWith(resolve("/scan"))) return [];
       return [
-        { folder: "/scan/dup-skill", slug: "dup-skill", displayName: "Dup Skill" },
-        { folder: "/scan/dup-skill-copy", slug: "dup-skill", displayName: "Dup Skill" },
+        { folder: resolve("/scan/dup-skill"), slug: "dup-skill", displayName: "Dup Skill" },
+        { folder: resolve("/scan/dup-skill-copy"), slug: "dup-skill", displayName: "Dup Skill" },
       ];
     });
 
@@ -442,7 +451,7 @@ describe("cmdSync", () => {
       throw new Error(`Unexpected apiRequest: ${args.path}`);
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false }, true);
+    await cmdSync(makeOpts(), { root: [resolve("/scan")], all: true, dryRun: false }, true);
 
     expect(mockCmdPublish).toHaveBeenCalledTimes(1);
     const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
@@ -453,13 +462,13 @@ describe("cmdSync", () => {
   it("prints labeled roots when clawdbot roots are detected", async () => {
     interactive = false;
     mockResolveClawdbotSkillRoots.mockResolvedValueOnce({
-      roots: ["/auto"],
-      labels: { "/auto": "Agent: Work" },
+      roots: [resolve("/auto")],
+      labels: { [resolve("/auto")]: "Agent: Work" },
     });
     const { findSkillFolders } = await import("../scanSkills.js");
     mocked(findSkillFolders).mockImplementation(async (root: string) => {
-      if (root === "/auto") {
-        return [{ folder: "/auto/alpha", slug: "alpha", displayName: "Alpha" }];
+      if (root === resolve("/auto")) {
+        return [{ folder: resolve("/auto/alpha"), slug: "alpha", displayName: "Alpha" }];
       }
       return [];
     });
@@ -486,17 +495,19 @@ describe("cmdSync", () => {
     const { findSkillFolders } = await import("../scanSkills.js");
     mocked(findSkillFolders).mockImplementation(async (root: string) => {
       scannedRoots.push(root);
-      if (root === "/scan") {
-        return [{ folder: "/scan/ci-skill", slug: "ci-skill", displayName: "CI Skill" }];
+      if (root === resolve("/scan")) {
+        return [{ folder: resolve("/scan/ci-skill"), slug: "ci-skill", displayName: "CI Skill" }];
       }
-      if (root === "/auto") {
-        return [{ folder: "/auto/auto-skill", slug: "auto-skill", displayName: "Auto Skill" }];
+      if (root === resolve("/auto")) {
+        return [
+          { folder: resolve("/auto/auto-skill"), slug: "auto-skill", displayName: "Auto Skill" },
+        ];
       }
       return [];
     });
     mockResolveClawdbotSkillRoots.mockResolvedValueOnce({
-      roots: ["/auto"],
-      labels: { "/auto": "Agent: Work" },
+      roots: [resolve("/auto")],
+      labels: { [resolve("/auto")]: "Agent: Work" },
     });
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path.startsWith("/api/v1/resolve?")) {
@@ -509,7 +520,7 @@ describe("cmdSync", () => {
     try {
       await cmdSync(
         makeOpts(),
-        { root: ["/scan"], all: true, dryRun: true, json: true, clawdbotRoots: false },
+        { root: [resolve("/scan")], all: true, dryRun: true, json: true, clawdbotRoots: false },
         false,
       );
       output = String(stdoutWrite.mock.calls.at(-1)?.[0] ?? "").trim();
@@ -518,12 +529,12 @@ describe("cmdSync", () => {
     }
 
     expect(mockResolveClawdbotSkillRoots).not.toHaveBeenCalled();
-    expect(scannedRoots).not.toContain("/auto");
+    expect(scannedRoots).not.toContain(resolve("/auto"));
     const parsed = JSON.parse(output) as {
       roots: string[];
       wouldPublish: Array<{ slug: string }>;
     };
-    expect(parsed.roots).toEqual(["/work", "/work/skills", "/scan"]);
+    expect(parsed.roots).toEqual([resolve("/work"), resolve("/work/skills"), resolve("/scan")]);
     expect(parsed.wouldPublish.map((entry) => entry.slug)).toEqual(["ci-skill"]);
   });
 
@@ -535,7 +546,7 @@ describe("cmdSync", () => {
     await expect(
       cmdSync(
         makeOpts(),
-        { root: ["/scan"], all: true, dryRun: true, json: true, clawdbotRoots: false },
+        { root: [resolve("/scan")], all: true, dryRun: true, json: true, clawdbotRoots: false },
         false,
       ),
     ).rejects.toThrow("No skills found (checked configured roots)");
@@ -565,7 +576,11 @@ describe("cmdSync", () => {
       throw new Error(`Unexpected apiRequest: ${args.path}`);
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, bump: "patch" }, true);
+    await cmdSync(
+      makeOpts(),
+      { root: [resolve("/scan")], all: true, dryRun: false, bump: "patch" },
+      true,
+    );
 
     const calls = mockCmdPublish.mock.calls.map(
       (call) => call[2] as { slug: string; changelog: string },
@@ -602,7 +617,11 @@ describe("cmdSync", () => {
       }
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, bump: "patch" }, true);
+    await cmdSync(
+      makeOpts(),
+      { root: [resolve("/scan")], all: true, dryRun: false, bump: "patch" },
+      true,
+    );
 
     expect(mockCmdPublish).toHaveBeenCalledTimes(2);
     expect(mockCmdPublish.mock.calls.map((call) => (call[2] as { slug: string }).slug)).toEqual([
@@ -649,7 +668,11 @@ describe("cmdSync", () => {
       }
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, bump: "patch" }, true);
+    await cmdSync(
+      makeOpts(),
+      { root: [resolve("/scan")], all: true, dryRun: false, bump: "patch" },
+      true,
+    );
 
     expect(mockCmdPublish).toHaveBeenCalledTimes(2);
     expect(mockCmdPublish.mock.calls.map((call) => (call[2] as { slug: string }).slug)).toEqual([
@@ -696,7 +719,11 @@ describe("cmdSync", () => {
       }
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, bump: "patch" }, true);
+    await cmdSync(
+      makeOpts(),
+      { root: [resolve("/scan")], all: true, dryRun: false, bump: "patch" },
+      true,
+    );
 
     expect(mockCmdPublish).toHaveBeenCalledTimes(2);
     expect(mockCmdPublish.mock.calls.map((call) => (call[2] as { slug: string }).slug)).toEqual([
@@ -735,7 +762,11 @@ describe("cmdSync", () => {
     });
     mockCmdPublish.mockRejectedValueOnce(new Error("HTTP 500"));
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, bump: "patch" }, true);
+    await cmdSync(
+      makeOpts(),
+      { root: [resolve("/scan")], all: true, dryRun: false, bump: "patch" },
+      true,
+    );
 
     expect(mockCmdPublish).toHaveBeenCalledTimes(2);
     expect(mockCmdPublish.mock.calls.map((call) => (call[2] as { slug: string }).slug)).toEqual([
@@ -756,8 +787,14 @@ describe("cmdSync", () => {
     interactive = false;
     const { findSkillFolders } = await import("../scanSkills.js");
     mocked(findSkillFolders).mockImplementation(async (root: string) => {
-      if (!root.endsWith("/scan")) return [];
-      return [{ folder: "/scan/update-skill", slug: "update-skill", displayName: "Update Skill" }];
+      if (!root.endsWith(resolve("/scan"))) return [];
+      return [
+        {
+          folder: resolve("/scan/update-skill"),
+          slug: "update-skill",
+          displayName: "Update Skill",
+        },
+      ];
     });
     mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
@@ -771,7 +808,7 @@ describe("cmdSync", () => {
     await expect(
       cmdSync(
         makeOpts(),
-        { root: ["/scan"], all: true, dryRun: false, bump: "not-semver" as never },
+        { root: [resolve("/scan")], all: true, dryRun: false, bump: "not-semver" as never },
         true,
       ),
     ).rejects.toThrow("Could not bump version for update-skill");
@@ -790,7 +827,7 @@ describe("cmdSync", () => {
       throw new Error(`Unexpected apiRequest: ${args.path}`);
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: true }, true);
+    await cmdSync(makeOpts(), { root: [resolve("/scan")], all: true, dryRun: true }, true);
     expect(
       mockApiRequest.mock.calls.some((call) => call[1]?.path === "/api/cli/telemetry/install"),
     ).toBe(false);
