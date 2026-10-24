@@ -187,6 +187,26 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
   for VirusTotal telemetry, then Codex reviews the materialized artifact
   workspace with static and VT signals as context.
+- Artifact contents are untrusted model input. Codex tool permissions must deny
+  off-workspace reads and network access, including access to the CLI credential
+  home and the parent worker's process environment. The worker uses a named
+  permission profile supplied through trusted CLI overrides, with only minimal
+  system files, the read-only artifact workspace, and a dedicated pinned CLI
+  installation readable. `CODEX_SECURITY_SCAN_RUNTIME_DIR` names that installation
+  and must not overlap the credential home or artifact workspace. An ordinary
+  globally readable `read-only` sandbox is insufficient for this boundary.
+- The Codex child receives only core runtime environment variables and the
+  credential-home path. SkillSpector retains provider authentication separately;
+  neither tool receives the worker token or GitHub/deployment credentials.
+- Local opt-in with an environment API key and no explicit `CODEX_HOME` uses the
+  normal CLI login to initialize the existing isolated worker home before claiming
+  jobs. The key travels through stdin, not the scan child's environment. Explicit
+  credential homes use the operator's existing CLI authentication. The credential
+  home and the model-readable artifact workspace must be disjoint.
+- Ubuntu runners must load the distribution's scoped `bwrap-userns-restrict`
+  AppArmor profile before invoking the sandbox. This grants Bubblewrap namespace
+  setup while keeping the broader AppArmor policy and the scan's filesystem and
+  network restrictions in force. Sandbox startup failures remain failures.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker

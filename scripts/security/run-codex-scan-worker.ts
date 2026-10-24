@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
@@ -510,6 +510,7 @@ async function runSkillSpector(
   try {
     const output = await runCommand("skillspector", args, {
       cwd: workspace,
+      env: skillSpectorEnv(),
       timeoutMs: codexScanTimeoutMs(),
     });
     const raw = await readFile(resultPath, "utf8");
@@ -602,7 +603,39 @@ ${skillSpector}
 Return the required JSON object only.`;
 }
 
-function codexEnv() {
+export function codexEnv() {
+  // The CLI authenticates from CODEX_HOME; model-controlled tools must never
+  // inherit the provider or worker credentials held by the parent process.
+  const env: NodeJS.ProcessEnv = {};
+  for (const name of [
+    "PATH",
+    "PATHEXT",
+    "HOME",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "SYSTEMROOT",
+    "WINDIR",
+    "TMP",
+    "TEMP",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "TZ",
+  ]) {
+    if (process.env[name] !== undefined) env[name] = process.env[name];
+  }
+  const codexHome = resolveCodexWorkerHome(process.env, LOCAL_CODEX_HOME);
+  if (codexHome) {
+    mkdirSync(codexHome, { recursive: true });
+    env.CODEX_HOME = codexHome;
+  }
+  env.NO_COLOR = "1";
+  return env;
+}
+
+export function skillSpectorEnv() {
+  // SkillSpector's trusted provider client still needs its own API credential.
   const env = { ...process.env };
   const codexHome = resolveCodexWorkerHome(process.env, LOCAL_CODEX_HOME);
   if (codexHome) {
@@ -636,12 +669,12 @@ class CommandFailure extends Error {
 async function runCommand(
   command: string,
   args: string[],
-  options: { cwd: string; input?: string; timeoutMs: number },
+  options: { cwd: string; env?: NodeJS.ProcessEnv; input?: string; timeoutMs: number },
 ) {
   return await new Promise<{ stdout: string; stderr: string }>((resolvePromise, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: codexEnv(),
+      env: options.env ?? codexEnv(),
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -952,25 +985,72 @@ function codexScanTimeoutMs() {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CODEX_SCAN_TIMEOUT_MS;
 }
 
-async function runCodex(
-  job: ClaimedJob,
-  workspace: string,
-  skillSpectorAnalysis: SkillSpectorAnalysis,
-  onDiagnostic: (diagnostic: Partial<CodexCommandDiagnostic>) => void,
-) {
+function codexRuntimeDir(workspace?: string) {
+  const configured = process.env.CODEX_SECURITY_SCAN_RUNTIME_DIR?.trim();
+  if (!configured) throw new Error("CODEX_SECURITY_SCAN_RUNTIME_DIR is required");
+  const runtime = resolve(configured);
+  const authHome = resolve(
+    resolveCodexWorkerHome(process.env, LOCAL_CODEX_HOME) ?? join(homedir(), ".codex"),
+  );
+  const contains = (parent: string, child: string) =>
+    child === parent || child.startsWith(`${parent}${sep}`);
+  const artifactRoot = workspace ? resolve(workspace) : undefined;
+  if (artifactRoot && (contains(artifactRoot, authHome) || contains(authHome, artifactRoot))) {
+    throw new Error("The Codex credential home must be separate from the artifact workspace");
+  }
+  if (
+    !isAbsolute(configured) ||
+    dirname(runtime) === runtime ||
+    [authHome, root, ...(artifactRoot ? [artifactRoot] : [])].some((privatePath) =>
+      contains(runtime, privatePath),
+    ) ||
+    contains(authHome, runtime) ||
+    (artifactRoot !== undefined && contains(artifactRoot, runtime))
+  ) {
+    throw new Error(
+      "CODEX_SECURITY_SCAN_RUNTIME_DIR must be a dedicated CLI installation directory",
+    );
+  }
+  return runtime;
+}
+
+async function authenticateLocalCodex() {
+  if (
+    process.env.CLAWHUB_ALLOW_LOCAL_CODEX_SCAN !== "1" ||
+    process.env.CODEX_HOME?.trim() ||
+    !process.env.OPENAI_API_KEY?.trim()
+  )
+    return;
+  // Preserve env-key local opt-in without exposing that key to the scan process.
+  // The standard CLI login stores it in the existing isolated worker home.
+  await runCommand(join(codexRuntimeDir(), "bin", "codex"), ["login", "--with-api-key"], {
+    cwd: root,
+    input: process.env.OPENAI_API_KEY,
+    timeoutMs: 10_000,
+  });
+}
+
+export function buildCodexExecArgs(workspace: string) {
+  const runtime = codexRuntimeDir(workspace);
   const resultPath = join(workspace, "codex-result.json");
-  const args = [
+  return [
     "exec",
     "--cd",
     workspace,
     "--model",
     process.env.CODEX_SECURITY_SCAN_MODEL ?? "gpt-5.5",
-    "--sandbox",
-    "read-only",
     "--skip-git-repo-check",
     "--ignore-user-config",
     "-c",
     "approval_policy=never",
+    "-c",
+    'default_permissions="clawscan"',
+    "-c",
+    // Pass the filesystem as one TOML table: CLI dotted-key overrides do not
+    // preserve quoted path segments (including workspace roots and drive names).
+    `permissions.clawscan.filesystem={ ":root"="deny", ":minimal"="read", ${JSON.stringify(runtime)}="read", ":workspace_roots"={ "."="read" } }`,
+    "-c",
+    "permissions.clawscan.network.enabled=false",
     "-c",
     `model_reasoning_effort=${process.env.CODEX_SECURITY_SCAN_REASONING_EFFORT ?? "high"}`,
     "-c",
@@ -987,12 +1067,22 @@ async function runCodex(
     "--json",
     "-",
   ];
+}
+
+async function runCodex(
+  job: ClaimedJob,
+  workspace: string,
+  skillSpectorAnalysis: SkillSpectorAnalysis,
+  onDiagnostic: (diagnostic: Partial<CodexCommandDiagnostic>) => void,
+) {
+  const resultPath = join(workspace, "codex-result.json");
+  const args = buildCodexExecArgs(workspace);
   const artifactSignalText = await collectArtifactSignalText(join(workspace, "artifact"));
   const injectionSignals = detectInjectionPatterns(artifactSignalText);
   const prompt = buildPrompt(job, injectionSignals, skillSpectorAnalysis);
   onDiagnostic({ args });
   try {
-    const output = await runCommand("codex", args, {
+    const output = await runCommand(join(codexRuntimeDir(workspace), "bin", "codex"), args, {
       cwd: workspace,
       input: prompt,
       timeoutMs: codexScanTimeoutMs(),
@@ -1093,6 +1183,12 @@ async function main() {
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
   const token = requireEnv("SECURITY_SCAN_WORKER_TOKEN");
+  const cli = join(codexRuntimeDir(), "bin", "codex");
+  const version = await runCommand(cli, ["--version"], { cwd: root, timeoutMs: 10_000 });
+  if (version.stdout.trim() !== "codex-cli 0.153.4") {
+    throw new Error("The scan worker requires the qualified Codex CLI version 0.153.4");
+  }
+  await authenticateLocalCodex();
   const client = new ConvexHttpClient(convexUrl);
   const workerId =
     process.env.CODEX_SECURITY_SCAN_WORKER_ID ??

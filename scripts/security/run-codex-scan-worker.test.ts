@@ -1,8 +1,9 @@
 /* @vitest-environment node */
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { join, parse } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertCodexWorkerExecutionAllowed,
   isCodexWorkerExecutionAllowed,
@@ -11,6 +12,9 @@ import {
 } from "../codex-worker-guard";
 import {
   buildPrompt,
+  buildCodexExecArgs,
+  codexEnv,
+  skillSpectorEnv,
   normalizeSkillSpectorAnalysis,
   resolveSkillSpectorScanInput,
   writeArtifactWorkspace,
@@ -20,6 +24,7 @@ import {
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
 });
 
@@ -30,6 +35,139 @@ async function tempDir() {
 }
 
 describe("run-codex-scan-worker diagnostics", () => {
+  it("keeps provider and worker secrets out of the Codex process environment", () => {
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-provider-secret");
+    vi.stubEnv("ANTHROPIC_API_KEY", "synthetic-other-provider-secret");
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "synthetic-worker-secret");
+    vi.stubEnv("UNLISTED_CREDENTIAL", "synthetic-unlisted-secret");
+    vi.stubEnv("CODEX_HOME", join(tmpdir(), "clawhub-synthetic-auth-home"));
+    const env = codexEnv();
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.SECURITY_SCAN_WORKER_TOKEN).toBeUndefined();
+    expect(env.UNLISTED_CREDENTIAL).toBeUndefined();
+    expect(env.CODEX_HOME).toBe(process.env.CODEX_HOME);
+    expect(env.PATH).toBe(process.env.PATH);
+  });
+
+  it("denies off-workspace file reads without disabling the trusted CLI runtime", () => {
+    const runtime = join(tmpdir(), "clawhub-codex-runtime");
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", runtime);
+    const args = buildCodexExecArgs("/tmp/scan-artifact");
+    expect(args).not.toContain("--sandbox");
+    expect(args).toContain('default_permissions="clawscan"');
+    const filesystem = args.find((arg) => arg.startsWith("permissions.clawscan.filesystem="));
+    expect(filesystem).toContain('":root"="deny"');
+    expect(filesystem).toContain('":minimal"="read"');
+    expect(filesystem).toContain(`${JSON.stringify(runtime)}="read"`);
+    expect(filesystem).toContain('":workspace_roots"={ "."="read" }');
+    expect(args).toContain("permissions.clawscan.network.enabled=false");
+    expect(args).toContain("--ignore-user-config");
+    expect(args).toContain("--ephemeral");
+  });
+
+  it("rejects missing or root-wide runtime permissions before starting a scan", () => {
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", "");
+    expect(() => buildCodexExecArgs("/tmp/scan-artifact")).toThrow("RUNTIME_DIR");
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", parse(tmpdir()).root);
+    expect(() => buildCodexExecArgs("/tmp/scan-artifact")).toThrow("dedicated");
+  });
+
+  it("preserves SkillSpector provider authentication without forwarding the worker token", () => {
+    vi.stubEnv("OPENAI_API_KEY", "synthetic-provider-secret");
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "synthetic-worker-secret");
+    expect(skillSpectorEnv().OPENAI_API_KEY).toBe("synthetic-provider-secret");
+    expect(skillSpectorEnv().SECURITY_SCAN_WORKER_TOKEN).toBeUndefined();
+  });
+
+  it("rejects runtime permissions that also expose the credential home or artifact", () => {
+    const base = join(tmpdir(), "clawhub-overlapping-runtime");
+    vi.stubEnv("CODEX_HOME", join(base, "auth"));
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", base);
+    expect(() => buildCodexExecArgs(join(tmpdir(), "artifact"))).toThrow("dedicated");
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", join(base, "artifact", "runtime"));
+    expect(() => buildCodexExecArgs(join(base, "artifact"))).toThrow("dedicated");
+  });
+
+  it("rejects a credential home inside the model-readable workspace", () => {
+    const workspace = join(tmpdir(), "clawhub-readable-workspace");
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", join(tmpdir(), "clawhub-separate-runtime"));
+    vi.stubEnv("CODEX_HOME", join(workspace, ".codex"));
+    expect(() => buildCodexExecArgs(workspace)).toThrow("credential home");
+  });
+
+  it.skipIf(process.platform !== "linux" || !process.env.CODEX_SECURITY_SCAN_TEST_CLI)(
+    "enforces credential isolation with the pinned Linux CLI and retains stored authentication",
+    async () => {
+      const base = await tempDir();
+      const workspace = join(base, "workspace");
+      const authHome = join(base, "auth");
+      await mkdir(workspace);
+      await mkdir(authHome);
+      await writeFile(join(workspace, "SKILL.md"), "harmless artifact control");
+      vi.stubEnv("CODEX_HOME", authHome);
+      vi.stubEnv("OPENAI_API_KEY", "synthetic-only-inherited-key");
+      const cli = process.env.CODEX_SECURITY_SCAN_TEST_CLI!;
+      expect(execFileSync(cli, ["--version"], { encoding: "utf8", timeout: 10_000 }).trim()).toBe(
+        "codex-cli 0.153.4",
+      );
+      execFileSync(cli, ["login", "--with-api-key"], {
+        env: codexEnv(),
+        input: "synthetic-only",
+        encoding: "utf8",
+        timeout: 10_000,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      await symlink(join(authHome, "auth.json"), join(workspace, "credential-alias"));
+      const args = buildCodexExecArgs(workspace);
+      const config = args.flatMap((arg, index) =>
+        arg === "-c" ? args.slice(index, index + 2) : [],
+      );
+      const probe = [
+        "import json,pathlib,sys",
+        "def readable(path):",
+        " try: return 'synthetic-only' in pathlib.Path(path).read_text()",
+        " except (PermissionError,FileNotFoundError): return False",
+        "print(json.dumps({'credential':readable(sys.argv[1]),'alias':readable('credential-alias'),'artifact':pathlib.Path('SKILL.md').read_text()=='harmless artifact control'}))",
+      ].join("\n");
+      const inspect = (profile: string, overrides: string[] = []) =>
+        JSON.parse(
+          execFileSync(
+            cli,
+            [
+              ...overrides,
+              "sandbox",
+              "-P",
+              profile,
+              "-C",
+              workspace,
+              "--",
+              "/usr/bin/python3",
+              "-c",
+              probe,
+              join(authHome, "auth.json"),
+            ],
+            { env: codexEnv(), encoding: "utf8", timeout: 30_000 },
+          ),
+        );
+      expect(inspect(":read-only")).toEqual({ credential: true, alias: true, artifact: true });
+      expect(inspect("clawscan", config)).toEqual({
+        credential: false,
+        alias: false,
+        artifact: true,
+      });
+      expect(
+        execFileSync(cli, [...config, "login", "status"], {
+          env: codexEnv(),
+          encoding: "utf8",
+          timeout: 10_000,
+          stdio: ["ignore", "pipe", "pipe"],
+        }),
+      ).toBeDefined();
+    },
+    60_000,
+  );
+
   it("blocks direct local Codex security worker runs without opt-in", () => {
     expect(isCodexWorkerExecutionAllowed({})).toBe(false);
     expect(() => assertCodexWorkerExecutionAllowed({})).toThrow(
