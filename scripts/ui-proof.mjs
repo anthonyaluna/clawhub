@@ -337,7 +337,7 @@ ${seedCommand}
 
 export function renderRemoteLaneScript({ lane, opts, plan, scenarioText }) {
   const scenarioB64 = Buffer.from(scenarioText, "utf8").toString("base64");
-  const runtimePath = path.join("scripts", "ui-proof-runtime.mjs");
+  const runtimePath = path.posix.join("scripts", "ui-proof-runtime.mjs");
   const laneRemoteDir = `.artifacts/clawhub-ui-proof/remote-${path.basename(plan.outputDir)}/${lane.name}`;
   const appRootSetup =
     lane.name === "baseline"
