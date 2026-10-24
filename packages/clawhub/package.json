@@ -47,7 +47,7 @@
     "ora": "9.4.0",
     "p-retry": "8.0.0",
     "semver": "7.8.2",
-    "undici": "7.27.1"
+    "undici": "7.30.1"
   },
   "devDependencies": {
     "@types/node": "25.9.1",
