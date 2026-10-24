@@ -1,8 +1,21 @@
 import { v } from "convex/values";
-import { internalMutation, mutation } from "./functions";
+import { internalMutation, internalQuery, mutation } from "./functions";
 import { requireUser } from "./lib/access";
 
 const PACKAGE_PUBLISH_UPLOAD_TICKET_TTL_MS = 15 * 60_000;
+
+export const getFileMetadataInternal = internalQuery({
+  args: { storageIds: v.array(v.id("_storage")) },
+  returns: v.array(v.union(v.null(), v.object({ size: v.number(), sha256: v.string() }))),
+  handler: async (ctx, args) => {
+    return await Promise.all(
+      args.storageIds.map(async (storageId) => {
+        const metadata = await ctx.db.system.get("_storage", storageId);
+        return metadata ? { size: metadata.size, sha256: metadata.sha256 } : null;
+      }),
+    );
+  },
+});
 
 export const generateUploadUrl = mutation({
   args: {},

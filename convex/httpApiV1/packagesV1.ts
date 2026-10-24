@@ -67,7 +67,7 @@ import {
   requireApiTokenUserOrResponse,
   requireAdminOrResponse,
   requirePackagePublishAuthOrResponse,
-  safeTextFileResponse,
+  safeStoredTextFileResponse,
   softDeleteErrorToResponse,
   formatAuthzMessage,
   formatUserFacingErrorMessage,
@@ -3091,12 +3091,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       if (file.size > MAX_RAW_FILE_BYTES) return text("File too large", 413, rate.headers);
       const blob = await ctx.storage.get(file.storageId);
       if (!blob) return text("File not found", 404, rate.headers);
-      return safeTextFileResponse({
-        textContent: await blob.text(),
+      return safeStoredTextFileResponse({
+        blob,
         path: file.path,
         contentType: file.contentType,
-        sha256: file.sha256,
-        size: file.size,
         headers: rate.headers,
       });
     }
@@ -3112,13 +3110,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (file.size > MAX_RAW_FILE_BYTES) return text("File too large", 413, rate.headers);
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File not found", 404, rate.headers);
-    const textContent = await blob.text();
-    return safeTextFileResponse({
-      textContent,
+    return safeStoredTextFileResponse({
+      blob,
       path: file.path,
       contentType: file.contentType,
-      sha256: file.sha256,
-      size: file.size,
       headers: rate.headers,
     });
   }
