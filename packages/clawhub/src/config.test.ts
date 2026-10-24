@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { dirname, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createEnvStubRegistry } from "../test/runtimeStubs.js";
 
@@ -26,7 +27,7 @@ const configModuleSpecifier = "./config.js?config-test" as string;
 const { writeGlobalConfig } = (await import(configModuleSpecifier)) as typeof import("./config");
 
 const originalPlatform = process.platform;
-const testConfigPath = "/tmp/clawhub-config-test/config.json";
+const testConfigPath = resolve("/tmp/clawhub-config-test/config.json");
 const envStubs = createEnvStubRegistry();
 
 function makeErr(code: string): NodeJS.ErrnoException {
@@ -58,7 +59,7 @@ describe("writeGlobalConfig", () => {
   it("writes config with restricted modes", async () => {
     await writeGlobalConfig({ registry: "https://example.com", token: "clh_test" });
 
-    expect(fsMocks.mkdir).toHaveBeenCalledWith("/tmp/clawhub-config-test", {
+    expect(fsMocks.mkdir).toHaveBeenCalledWith(dirname(testConfigPath), {
       recursive: true,
       mode: 0o700,
     });

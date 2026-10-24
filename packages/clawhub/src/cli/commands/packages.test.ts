@@ -1340,7 +1340,8 @@ describe("package commands", () => {
   it("packs a plugin folder through npm pack and validates the ClawPack", async () => {
     const workdir = await makeTmpWorkdir();
     try {
-      const folder = join(workdir, "demo-plugin");
+      const folderName = "demo plugin & (literal)";
+      const folder = join(workdir, folderName);
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(workdir, "packs"), { recursive: true });
       await writeFile(
@@ -1350,6 +1351,7 @@ describe("package commands", () => {
           displayName: "Demo Plugin",
           version: "1.0.0",
           description: "Demo plugin",
+          scripts: { prepack: 'node -e "process.exit(17)"' },
         }),
         "utf8",
       );
@@ -1360,7 +1362,7 @@ describe("package commands", () => {
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
-      await cmdPackPackage(makeOpts(workdir), "demo-plugin", {
+      await cmdPackPackage(makeOpts(workdir), folderName, {
         packDestination: "packs",
       });
 
