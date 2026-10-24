@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   assertCodexWorkerExecutionAllowed,
@@ -95,7 +95,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
     const toolDir = "/trusted/nvidia-tooling";
 
     expect(trustedRendererPath(toolDir)).toBe(
-      "/trusted/nvidia-tooling/AI Transparency Card Automation/scripts/render_card.py",
+      join(resolve(toolDir), "AI Transparency Card Automation", "scripts", "render_card.py"),
     );
   });
 

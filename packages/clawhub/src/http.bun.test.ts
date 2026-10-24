@@ -1,5 +1,7 @@
 /* @vitest-environment node */
 
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createHttpClient } from "./http.js";
 
@@ -181,9 +183,10 @@ describe("bun http client", () => {
   });
 
   it("posts multipart form data via curl and cleans up temp files", async () => {
+    const tempDir = join(tmpdir(), "clawhub-upload-abc");
     const { client, spawnImpl, mkdirImpl, writeFileImpl, rmImpl } = createBunClient({
       spawnImpl: () => ({ status: 0, stdout: '{"ok":true}\n200', stderr: "" }),
-      mkdtempValue: "/tmp/clawhub-upload-abc",
+      mkdtempValue: tempDir,
     });
 
     const form = new FormData();
@@ -197,16 +200,16 @@ describe("bun http client", () => {
     });
 
     expect(result).toEqual({ ok: true });
-    expect(mkdirImpl).toHaveBeenCalledWith("/tmp/clawhub-upload-abc/dist", { recursive: true });
+    expect(mkdirImpl).toHaveBeenCalledWith(join(tempDir, "dist"), { recursive: true });
     expect(writeFileImpl).toHaveBeenCalled();
-    expect(rmImpl).toHaveBeenCalledWith("/tmp/clawhub-upload-abc", {
+    expect(rmImpl).toHaveBeenCalledWith(tempDir, {
       recursive: true,
       force: true,
     });
     const [, args] = spawnImpl.mock.calls[0] as [string, string[]];
     expect(args).toContain("-F");
     expect(args.some((arg) => arg.includes("name=demo"))).toBe(true);
-    expect(args.some((arg) => arg.includes("file=@/tmp/clawhub-upload-abc/dist/demo.txt"))).toBe(
+    expect(args.some((arg) => arg.includes(`file=@${join(tempDir, "dist", "demo.txt")}`))).toBe(
       true,
     );
   });
