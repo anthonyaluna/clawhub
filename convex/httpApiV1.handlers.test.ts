@@ -1616,9 +1616,7 @@ describe("httpApiV1 handlers", () => {
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const storageGet = vi.fn().mockResolvedValue({
-      text: vi.fn().mockResolvedValue("hello"),
-    });
+    const storageGet = vi.fn().mockResolvedValue(new Blob(["hello"]));
     const response = await __handlers.soulsGetRouterV1Handler(
       makeCtx({
         runQuery,
@@ -1630,6 +1628,9 @@ describe("httpApiV1 handlers", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("hello");
+    expect(response.headers.get("X-Content-SHA256")).toBe(
+      "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+    );
     expect(storageGet).toHaveBeenCalledWith("_storage:1");
     expect(runMutation).toHaveBeenCalledWith(internal.soulDownloads.incrementInternal, {
       soulId: "souls:1",
@@ -3468,8 +3469,64 @@ describe("httpApiV1 handlers", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("hello");
-    expect(response.headers.get("X-Content-SHA256")).toBe("abcd");
+    expect(response.headers.get("X-Content-SHA256")).toBe(
+      "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+    );
   });
+
+  it.each(["skills", "souls", "packages"])(
+    "blocks an oversized legacy %s blob despite a false saved size",
+    async (kind) => {
+      const blob = new Blob([new Uint8Array(200 * 1024 + 1)]);
+      const decode = vi.spyOn(blob, "text");
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if ("slug" in args) {
+          const resource = {
+            _id: kind === "souls" ? "souls:1" : "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            tags: {},
+            latestVersionId: "versions:1",
+          };
+          return kind === "souls" ? resource : { skill: resource, owner: null };
+        }
+        if ("versionId" in args) {
+          return {
+            skillId: "skills:1",
+            version: "1.0.0",
+            files: [
+              {
+                path: kind === "souls" ? "SOUL.md" : "SKILL.md",
+                size: -1,
+                storageId: "_storage:1",
+                sha256: "forged",
+              },
+            ],
+          };
+        }
+        return null;
+      });
+      const handler =
+        kind === "skills"
+          ? __handlers.skillsGetRouterV1Handler
+          : kind === "souls"
+            ? __handlers.soulsGetRouterV1Handler
+            : __handlers.packagesGetRouterV1Handler;
+      const path = kind === "souls" ? "SOUL.md" : "SKILL.md";
+      const downloads: string[] = [];
+      const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+        if (typeof args.soulId === "string") downloads.push(args.soulId);
+        return okRate();
+      });
+      const response = await handler(
+        makeCtx({ runQuery, runMutation, storage: { get: async () => blob } }),
+        new Request(`https://example.com/api/v1/${kind}/demo/file?path=${path}`),
+      );
+      expect(response.status).toBe(413);
+      expect(decode).not.toHaveBeenCalled();
+      expect(downloads).toEqual([]);
+    },
+  );
 
   it("blocks raw file reads for malware-blocked skills", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -9524,65 +9581,72 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("package file uses read rate limiting", async () => {
-    const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
-        return {
-          package: {
-            _id: "packages:1",
-            name: "demo-plugin",
-            displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          latestRelease: null,
-          owner: null,
-        };
-      }
-      if ("releaseId" in args) {
-        return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "README.md",
-              size: 5,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "text/markdown",
+  it.each([false, true])(
+    "package file enforces byte limits and read rate limiting (oversized: %s)",
+    async (oversized) => {
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if ("name" in args) {
+          return {
+            package: {
+              _id: "packages:1",
+              name: "demo-plugin",
+              displayName: "Demo Plugin",
+              family: "code-plugin",
+              tags: {},
+              latestReleaseId: "packageReleases:1",
+              channel: "community",
+              isOfficial: false,
+              createdAt: 1,
+              updatedAt: 1,
             },
-          ],
-        };
-      }
-      return null;
-    });
+            latestRelease: null,
+            owner: null,
+          };
+        }
+        if ("releaseId" in args) {
+          return {
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "README.md",
+                size: 5,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "text/markdown",
+              },
+            ],
+          };
+        }
+        return null;
+      });
 
-    const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({
-        runQuery,
-        runMutation,
-        storage: {
-          get: vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/markdown" })),
-        },
-      }),
-      new Request("https://example.com/api/v1/packages/demo-plugin/file?path=README.md"),
-    );
+      const response = await __handlers.packagesGetRouterV1Handler(
+        makeCtx({
+          runQuery,
+          runMutation,
+          storage: {
+            get: vi.fn().mockResolvedValue(
+              new Blob([oversized ? new Uint8Array(200 * 1024 + 1) : "hello"], {
+                type: "text/markdown",
+              }),
+            ),
+          },
+        }),
+        new Request("https://example.com/api/v1/packages/demo-plugin/file?path=README.md"),
+      );
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
-    expect(findRateLimitCallArgs(runMutation)).toMatchObject({
-      key: expect.stringMatching(/^ip:/),
-      limit: RATE_LIMITS.read.ip,
-    });
-  });
+      expect(response.status).toBe(oversized ? 413 : 200);
+      expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
+      expect(findRateLimitCallArgs(runMutation)).toMatchObject({
+        key: expect.stringMatching(/^ip:/),
+        limit: RATE_LIMITS.read.ip,
+      });
+    },
+  );
 
   it("package file resolves lowercase readme variants from the canonical request path", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());

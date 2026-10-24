@@ -12,7 +12,7 @@ import {
   parsePublishBody,
   requireApiTokenUserOrResponse,
   resolveSoulTagsBatch,
-  safeTextFileResponse,
+  safeStoredTextFileResponse,
   softDeleteErrorToResponse,
   text,
   toOptionalNumber,
@@ -264,17 +264,16 @@ export async function soulsGetRouterV1Handler(ctx: ActionCtx, request: Request) 
 
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File missing in storage", 410, rate.headers);
-    const textContent = await blob.text();
-
-    void ctx.runMutation(internal.soulDownloads.incrementInternal, { soulId: soul._id });
-    return safeTextFileResponse({
-      textContent,
+    const response = await safeStoredTextFileResponse({
+      blob,
       path: file.path,
       contentType: file.contentType ?? undefined,
-      sha256: file.sha256,
-      size: file.size,
       headers: rate.headers,
     });
+    if (response.ok) {
+      void ctx.runMutation(internal.soulDownloads.incrementInternal, { soulId: soul._id });
+    }
+    return response;
   }
 
   return text("Not found", 404, rate.headers);

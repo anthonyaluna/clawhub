@@ -52,6 +52,26 @@ export function safeTextFileResponse(params: {
   return new Response(params.textContent, { status: 200, headers });
 }
 
+export async function safeStoredTextFileResponse(params: {
+  blob: Blob;
+  path: string;
+  contentType?: string;
+  headers?: HeadersInit;
+}) {
+  if (params.blob.size > MAX_RAW_FILE_BYTES) {
+    return text("File exceeds 200KB limit", 413, params.headers);
+  }
+  const bytes = new Uint8Array(await params.blob.arrayBuffer());
+  return safeTextFileResponse({
+    textContent: await params.blob.text(),
+    path: params.path,
+    contentType: params.contentType,
+    sha256: await sha256Hex(bytes),
+    size: params.blob.size,
+    headers: params.headers,
+  });
+}
+
 export function json(value: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(value), {
     status,

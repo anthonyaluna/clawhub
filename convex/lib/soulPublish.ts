@@ -6,6 +6,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { generateEmbedding } from "./embeddings";
 import { requireGitHubAccountAge } from "./githubAccount";
+import { verifyPublishFiles } from "./publishStorage";
 import {
   buildEmbeddingText,
   getFrontmatterMetadata,
@@ -122,11 +123,12 @@ export async function publishSoulVersionForUser(
       contentType: normalizeTextContentType(file.path, file.contentType),
     };
   });
-  const publishFiles = sanitizedFiles.filter((file) => !isMacJunkPath(file.path));
-  if (publishFiles.some((file) => !isTextFile(file.path, file.contentType ?? undefined))) {
+  const sourceFiles = sanitizedFiles.filter((file) => !isMacJunkPath(file.path));
+  if (sourceFiles.some((file) => !isTextFile(file.path, file.contentType ?? undefined))) {
     throw new ConvexError("Only text-based files are allowed");
   }
 
+  const publishFiles = await verifyPublishFiles(ctx, sourceFiles);
   const totalBytes = publishFiles.reduce((sum, file) => sum + file.size, 0);
   if (totalBytes > MAX_TOTAL_BYTES) {
     throw new ConvexError("Soul bundle exceeds 50MB limit");
