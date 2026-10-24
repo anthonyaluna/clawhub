@@ -1,4 +1,5 @@
 /* @vitest-environment node */
+import { createHash } from "node:crypto";
 import { gzipSync, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
@@ -3527,6 +3528,87 @@ describe("httpApiV1 handlers", () => {
       expect(downloads).toEqual([]);
     },
   );
+
+  for (const kind of ["skills", "souls", "package-alias", "package-release"] as const) {
+    it.each([
+      { label: "UTF-8 BOM", values: [0xef, 0xbb, 0xbf, 0x41] },
+      { label: "invalid UTF-8", values: [0xff, 0xfe, 0x61] },
+      { label: "empty file", values: [] },
+      { label: "valid UTF-8", values: [0xcf, 0x80, 0x0a] },
+    ])(`${kind} raw response preserves stored wire bytes: $label`, async ({ values }) => {
+      const bytes = new Uint8Array(values);
+      const path = kind === "souls" ? "SOUL.md" : "SKILL.md";
+      const file = {
+        path,
+        size: bytes.byteLength,
+        storageId: "storage:wire",
+        sha256: "a".repeat(64),
+        contentType: "text/markdown",
+      };
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if ("name" in args && kind === "package-release") {
+          return {
+            package: {
+              _id: "packages:1",
+              name: "demo",
+              displayName: "Demo",
+              family: "code-plugin",
+              tags: {},
+              latestReleaseId: "packageReleases:1",
+              channel: "community",
+              isOfficial: false,
+              createdAt: 1,
+              updatedAt: 1,
+            },
+            latestRelease: null,
+            owner: null,
+          };
+        }
+        if ("slug" in args) {
+          if (kind === "souls")
+            return { _id: "souls:1", slug: "demo", latestVersionId: "soulVersions:1" };
+          return { skill: { _id: "skills:1", slug: "demo", latestVersionId: "skillVersions:1" } };
+        }
+        if ("versionId" in args || "releaseId" in args) {
+          return {
+            ...(kind === "souls"
+              ? { _id: "soulVersions:1", soulId: "souls:1" }
+              : kind === "package-release"
+                ? { _id: "packageReleases:1", packageId: "packages:1" }
+                : { _id: "skillVersions:1", skillId: "skills:1" }),
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "",
+            files: [file],
+          };
+        }
+        return null;
+      });
+      const handler =
+        kind === "skills"
+          ? __handlers.skillsGetRouterV1Handler
+          : kind === "souls"
+            ? __handlers.soulsGetRouterV1Handler
+            : __handlers.packagesGetRouterV1Handler;
+      const route = kind.startsWith("package") ? "packages" : kind;
+      const response = await handler(
+        makeCtx({
+          runQuery,
+          runMutation: vi.fn().mockResolvedValue(okRate()),
+          storage: { get: async () => new Blob([bytes]) },
+        }),
+        new Request(`https://example.com/api/v1/${route}/demo/file?path=${path}`),
+      );
+      expect(response.status).toBe(200);
+      const wireBytes = new Uint8Array(await response.arrayBuffer());
+      expect(wireBytes.byteLength).toBe(bytes.byteLength);
+      expect(wireBytes).toEqual(bytes);
+      const digest = createHash("sha256").update(wireBytes).digest("hex");
+      expect(response.headers.get("X-Content-SHA256")).toBe(digest);
+      expect(response.headers.get("ETag")).toBe(digest);
+      expect(response.headers.get("X-Content-Size")).toBe(String(wireBytes.byteLength));
+    });
+  }
 
   it("blocks raw file reads for malware-blocked skills", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {

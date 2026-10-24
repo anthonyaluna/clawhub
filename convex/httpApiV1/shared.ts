@@ -19,7 +19,7 @@ function isSvgLike(contentType: string | undefined, path: string) {
 }
 
 export function safeTextFileResponse(params: {
-  textContent: string;
+  textContent: string | ArrayBuffer;
   path: string;
   contentType?: string;
   sha256: string;
@@ -61,13 +61,13 @@ export async function safeStoredTextFileResponse(params: {
   if (params.blob.size > MAX_RAW_FILE_BYTES) {
     return text("File exceeds 200KB limit", 413, params.headers);
   }
-  const bytes = new Uint8Array(await params.blob.arrayBuffer());
+  const bytes = await params.blob.arrayBuffer();
   return safeTextFileResponse({
-    textContent: await params.blob.text(),
+    textContent: bytes,
     path: params.path,
     contentType: params.contentType,
-    sha256: await sha256Hex(bytes),
-    size: params.blob.size,
+    sha256: await sha256Hex(new Uint8Array(bytes)),
+    size: bytes.byteLength,
     headers: params.headers,
   });
 }
