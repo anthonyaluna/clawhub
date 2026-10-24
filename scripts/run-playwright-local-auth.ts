@@ -423,6 +423,22 @@ async function main() {
   console.log("Waiting for local Convex functions.");
   await runConvexFunctionWhenReady("appMeta:getDeploymentInfo", {}, e2eEnv, { push: true });
 
+  // Exercise this revision's protected routes against its disposable backend.
+  // Public deployments may have a different administrative API contract.
+  runRequired(
+    "bunx",
+    [
+      "vitest",
+      "run",
+      "-c",
+      "vitest.e2e.config.ts",
+      "e2e/permissions.e2e.test.ts",
+      "--testNamePattern",
+      "rejects unauthenticated protected write endpoints before mutation",
+    ],
+    { ...e2eEnv, CLAWHUB_REGISTRY: convexSiteUrl, CLAWHUB_E2E_ALLOW_MUTATIONS: "0" },
+  );
+
   console.log("Building ClawHub for local-auth Playwright e2e.");
   runRequired("bun", ["run", "build"], e2eEnv);
 
