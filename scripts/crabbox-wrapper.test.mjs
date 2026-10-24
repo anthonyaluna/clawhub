@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   assertRequiredCrabboxCapabilities,
@@ -33,12 +34,14 @@ describe("crabbox-wrapper", () => {
   });
 
   it("prefers a sibling Crabbox checkout when it exists", () => {
+    const repoRoot = resolve("/repo/clawhub");
+    const siblingBinary = resolve("/repo/crabbox/bin/crabbox");
     expect(
       selectCrabboxBinary({
-        exists: (candidate) => candidate === "/repo/crabbox/bin/crabbox",
-        repoRoot: "/repo/clawhub",
+        exists: (candidate) => candidate === siblingBinary,
+        repoRoot,
       }),
-    ).toBe("/repo/crabbox/bin/crabbox");
+    ).toBe(siblingBinary);
   });
 
   it("rejects stale Crabbox binaries that cannot wrap Blacksmith Testbox", () => {

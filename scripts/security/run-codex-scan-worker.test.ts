@@ -250,6 +250,39 @@ describe("run-codex-scan-worker diagnostics", () => {
     await expect(resolveSkillSpectorScanInput(workspace)).resolves.toBe("artifact");
   });
 
+  it.each(["../escape.md", "../artifact-sibling/escape.md"])(
+    "rejects artifact paths outside the workspace: %s",
+    async (path) => {
+      const workspace = await tempDir();
+      await expect(
+        writeArtifactWorkspace(
+          {
+            job: {
+              _id: "job123",
+              hasMaliciousSignal: false,
+              leaseToken: "lease-secret",
+              source: "publish",
+              targetKind: "skillVersion",
+              waitForVtUntil: 0,
+            },
+            target: {
+              files: [{ path, sha256: "abc123", size: 7, url: "data:text/plain,escape" }],
+            },
+          },
+          workspace,
+        ),
+      ).rejects.toThrow(/Unsafe artifact path/);
+      await expect(readFile(join(workspace, "escape.md"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(
+        readFile(join(workspace, "artifact-sibling", "escape.md")),
+      ).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    },
+  );
+
   it("writes scanner metadata without lease tokens or signed file URLs", async () => {
     const workspace = await tempDir();
 
