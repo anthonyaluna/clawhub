@@ -2046,11 +2046,29 @@ export const addMember = mutation({
     if (!targetUser) {
       throw new ConvexError(`User "@${handle}" not found`);
     }
+    const existing = await getPublisherMembership(ctx, publisher._id, targetUser._id);
+    if (existing?.role === "owner" && args.role !== "owner") {
+      if (membership.role !== "owner") {
+        throw new ConvexError("Only org owners can demote owners");
+      }
+      // Check the current membership set in this mutation before removing owner authority.
+      let hasOtherOwner = false;
+      for await (const member of ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))) {
+        if (member.role === "owner" && member.userId !== targetUser._id) {
+          hasOtherOwner = true;
+          break;
+        }
+      }
+      if (!hasOtherOwner) {
+        throw new ConvexError("Publisher must have at least one owner");
+      }
+    }
     await ensurePersonalPublisherForUser(ctx, targetUser, {
       actorUserId: userId,
       source: "publisher.member.upsert",
     });
-    const existing = await getPublisherMembership(ctx, publisher._id, targetUser._id);
     const now = Date.now();
     if (existing) {
       await ctx.db.patch(existing._id, { role: args.role, updatedAt: now });
