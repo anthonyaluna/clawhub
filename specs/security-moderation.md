@@ -203,6 +203,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   jobs. The key travels through stdin, not the scan child's environment. Explicit
   credential homes use the operator's existing CLI authentication. The credential
   home and the model-readable artifact workspace must be disjoint.
+- Ubuntu runners must load the distribution's scoped `bwrap-userns-restrict`
+  AppArmor profile before invoking the sandbox. This grants Bubblewrap namespace
+  setup while keeping the broader AppArmor policy and the scan's filesystem and
+  network restrictions in force. Sandbox startup failures remain failures.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker

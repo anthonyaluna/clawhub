@@ -45,6 +45,12 @@ jobs:
       - name: Install scanner boundary test CLI
         run: npm install --global --prefix "$RUNNER_TEMP/clawhub-codex-test" @openai/codex@0.153.4
 
+      - name: Enable the Ubuntu Bubblewrap profile
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap apparmor-profiles
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+
       - name: Coverage
         run: bun run ci:unit
         env:

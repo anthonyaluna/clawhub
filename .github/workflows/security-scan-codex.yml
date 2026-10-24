@@ -37,8 +37,6 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
-      SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       CODEX_SECURITY_SCAN_RUNTIME_DIR: ${{ runner.temp }}/clawhub-codex
       CODEX_SECURITY_SCAN_LIMIT: ${{ inputs.limit || inputs['batch-limit'] || '6' }}
       CODEX_SECURITY_SCAN_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
@@ -58,6 +56,9 @@ jobs:
           python-version: "3.12"
 
       - name: Check configuration
+        env:
+          SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
           if [[ -z "$SECURITY_SCAN_WORKER_TOKEN" ]]; then
@@ -76,6 +77,12 @@ jobs:
           echo "$CODEX_SECURITY_SCAN_RUNTIME_DIR/bin" >> "$GITHUB_PATH"
           "$CODEX_SECURITY_SCAN_RUNTIME_DIR/bin/codex" --version
 
+      - name: Enable the Ubuntu Bubblewrap profile
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap apparmor-profiles
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+
       - name: Install SkillSpector
         run: |
           set -euo pipefail
@@ -87,9 +94,14 @@ jobs:
           skillspector --help >/dev/null
 
       - name: Authenticate Codex CLI
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
 
       - name: Run Codex security worker
+        env:
+          SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           bun scripts/security/run-codex-scan-worker.ts \
             --batch-limit "$CODEX_SECURITY_SCAN_LIMIT" \
