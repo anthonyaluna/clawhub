@@ -511,37 +511,12 @@ async function patchStructuredModerationFromVersion(
   // when the skill was already hidden by a user or quality hold so a later
   // hold lift cannot restore a latest-version malware verdict.
   if (shouldPreserveExistingModerationLock(skill) && !shouldPersistClawScanMalwareBlock) {
-    await scheduleClawScanAutobanForMalware(ctx, skill, version, patch);
     return;
   }
 
   const nextSkill = { ...skill, ...patch };
   await ctx.db.patch(skill._id, patch);
   await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-
-  await scheduleClawScanAutobanForMalware(ctx, skill, version, patch);
-}
-
-async function scheduleClawScanAutobanForMalware(
-  ctx: MutationCtx,
-  skill: Doc<"skills">,
-  version: Pick<Doc<"skillVersions">, "llmAnalysis" | "sha256hash">,
-  patch: SkillModerationPatch,
-) {
-  if (
-    patch.moderationVerdict === "malicious" &&
-    skill.ownerUserId &&
-    isClawScanMaliciousAnalysis(version.llmAnalysis)
-  ) {
-    await ctx.scheduler.runAfter(0, internal.users.autobanMalwareAuthorInternal, {
-      ownerUserId: skill.ownerUserId,
-      slug: skill.slug,
-      ...(version.sha256hash ? { sha256hash: version.sha256hash } : {}),
-      trigger:
-        patch.moderationReasonCodes?.find((code) => code.startsWith("malicious.llm_")) ??
-        "malicious.llm_malicious",
-    });
-  }
 }
 
 export const recomputeLatestSkillModerationInternal = internalMutation({
