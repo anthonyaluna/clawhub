@@ -15,6 +15,8 @@ export const createInternal = internalMutation({
     repositoryOwner: v.string(),
     repositoryOwnerId: v.string(),
     workflowFilename: v.string(),
+    workflowRef: v.string(),
+    jobWorkflowRef: v.optional(v.string()),
     environment: v.optional(v.string()),
     runId: v.string(),
     runAttempt: v.string(),

@@ -652,12 +652,26 @@ Notes:
 - The reusable workflow defaults `source` to the caller repo.
 - For monorepos, pass `source_path` so the workflow publishes the plugin
   package folder, for example `source_path: extensions/codex`.
-- Pin the reusable workflow to a stable tag or full commit SHA. Do not run release publishing from `@main`.
+- Pin the reusable workflow to a full commit SHA for secretless trusted publishing. Tags and branches are not immutable pins.
 - `pull_request` should use `dry_run: true` so CI stays non-polluting.
 - Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.
 - Trusted publishing without a secret only works on `workflow_dispatch`; tag pushes still need `clawhub_token`.
 - Keep `clawhub_token` available for first publish, untrusted packages, or break-glass publishes.
 - The workflow uploads the JSON result as an artifact and exposes it as workflow outputs.
+
+Secretless publishing also requires an approved exact caller ref. A package owner or authorized administrator configures it with the existing moderation CLI:
+
+```bash
+clawhub-mod package trusted-publisher set demo-plugin \
+  --repository owner/repo \
+  --workflow-filename publish.yml \
+  --ref refs/heads/main \
+  --reusable-workflow-ref "$REVIEWED_WORKFLOW_COMMIT_SHA"
+```
+
+Use the same reviewed 40-character SHA in the caller's `uses: openclaw/clawhub/.github/workflows/package-publish.yml@...`. Direct workflows omit `--reusable-workflow-ref`; a configuration with that pin requires the reusable workflow. Environments remain optional and, when configured, must match. Wildcard refs are not accepted.
+
+Existing configurations without an approved caller ref and tokens without workflow provenance fail closed. Update the existing configuration and mint a fresh token before the next secretless publish. Ref or reusable-pin changes invalidate old tokens, including at the final release write. Manual owner-token overrides retain their existing authorization and reason requirements.
 
 ### `sync`
 

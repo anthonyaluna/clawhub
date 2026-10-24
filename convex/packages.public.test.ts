@@ -158,6 +158,7 @@ const insertReleaseInternalHandler = (
       actorUserId: string;
       ownerUserId: string;
       ownerPublisherId?: string;
+      publishTokenId?: string;
       publishActor?:
         | { kind: "user"; userId: string }
         | {
@@ -1040,6 +1041,7 @@ function makeInsertReleaseCtx(
   recordsById: Record<string, Record<string, unknown>> = {},
   runtimePackages: Array<Record<string, unknown>> = [],
   finalPublisherMembershipRole?: "owner" | "admin" | "publisher" | null,
+  trustedPublisher?: Record<string, unknown> | null,
 ) {
   const patch = vi.fn();
   let insertedPackage: Record<string, unknown> | null = null;
@@ -1069,6 +1071,13 @@ function makeInsertReleaseCtx(
         return null;
       }),
       query: vi.fn((table: string) => {
+        if (table === "packageTrustedPublishers") {
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(trustedPublisher ?? null),
+            })),
+          };
+        }
         if (table === "packages") {
           return {
             withIndex: vi.fn(
@@ -4337,6 +4346,23 @@ describe("packages public queries", () => {
   });
 
   it("preserves trusted GitHub Actions package publishes without org membership", async () => {
+    const trustedPublisher = {
+      packageId: "packages:demo",
+      provider: "github-actions",
+      repository: "org/demo-plugin",
+      repositoryId: "1",
+      repositoryOwner: "org",
+      repositoryOwnerId: "2",
+      workflowFilename: "publish.yml",
+      ref: "refs/heads/main",
+    };
+    const token = {
+      ...trustedPublisher,
+      _id: "packagePublishTokens:org",
+      version: "1.0.1",
+      workflowRef: "org/demo-plugin/.github/workflows/publish.yml@refs/heads/main",
+      expiresAt: Date.now() + 60_000,
+    };
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
         name: "@org/demo-plugin",
@@ -4346,6 +4372,7 @@ describe("packages public queries", () => {
       }),
       [],
       {
+        [token._id]: token,
         "users:member": { _id: "users:member", role: "user", trustedPublisher: false },
         "publishers:org": {
           _id: "publishers:org",
@@ -4354,6 +4381,9 @@ describe("packages public queries", () => {
           trustedPublisher: false,
         },
       },
+      [],
+      undefined,
+      trustedPublisher,
     );
 
     await expect(
@@ -4361,6 +4391,7 @@ describe("packages public queries", () => {
         actorUserId: "users:member",
         ownerUserId: "users:member",
         ownerPublisherId: "publishers:org",
+        publishTokenId: token._id,
         publishActor: {
           kind: "github-actions",
           repository: "org/demo-plugin",
@@ -5268,6 +5299,119 @@ describe("packages public queries", () => {
     );
   });
 
+  it.each([
+    { label: "approved direct workflow", allowed: true, config: {}, token: {} },
+    {
+      label: "approved immutable reusable workflow",
+      allowed: true,
+      config: { reusableWorkflowRef: "a".repeat(40) },
+      token: {
+        jobWorkflowRef: `openclaw/clawhub/.github/workflows/package-publish.yml@${"a".repeat(40)}`,
+      },
+    },
+    {
+      label: "caller ref rotated before commit",
+      allowed: false,
+      config: { ref: "refs/heads/release" },
+      token: {},
+    },
+    { label: "legacy config without a ref", allowed: false, config: { ref: undefined }, token: {} },
+    {
+      label: "legacy token without workflow provenance",
+      allowed: false,
+      config: {},
+      token: { workflowRef: undefined },
+    },
+    {
+      label: "workflow code differs from token ref",
+      allowed: false,
+      config: {},
+      token: {
+        workflowRef:
+          "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/attacker",
+      },
+    },
+    {
+      label: "reusable pin rotated before commit",
+      allowed: false,
+      config: { reusableWorkflowRef: "b".repeat(40) },
+      token: {
+        jobWorkflowRef: `openclaw/clawhub/.github/workflows/package-publish.yml@${"a".repeat(40)}`,
+      },
+    },
+    { label: "token revoked before commit", allowed: false, config: {}, token: { revokedAt: 1 } },
+    { label: "token expired before commit", allowed: false, config: {}, token: { expiresAt: 1 } },
+    { label: "token omitted at commit", allowed: false, config: {}, token: {}, omitToken: true },
+  ])("revalidates trusted publishing at the final mutation: $label", async (scenario) => {
+    const token = {
+      _id: "packagePublishTokens:1",
+      packageId: "packages:demo",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      workflowRef: "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
+      version: "1.0.1",
+      sha: "abc123",
+      ref: "refs/heads/main",
+      runId: "100",
+      runAttempt: "1",
+      expiresAt: Date.now() + 60_000,
+      ...scenario.token,
+    };
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:demo",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      ref: "refs/heads/main",
+      ...scenario.config,
+    };
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc(),
+      [],
+      { [token._id]: token },
+      [],
+      undefined,
+      trustedPublisher,
+    );
+    const result = insertReleaseInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
+      ...(scenario.omitToken ? {} : { publishTokenId: token._id }),
+      publishActor: {
+        kind: "github-actions",
+        repository: token.repository,
+        workflow: token.workflowFilename,
+        runId: token.runId,
+        runAttempt: token.runAttempt,
+        sha: token.sha,
+      },
+      name: "demo-plugin",
+      displayName: "Demo",
+      family: "code-plugin",
+      version: "1.0.1",
+      changelog: "update",
+      tags: ["latest"],
+      summary: "demo",
+      files: [],
+      integritySha256: "abc123",
+    });
+    if (scenario.allowed) {
+      await expect(result).resolves.toMatchObject({ ok: true, releaseId: "packageReleases:new" });
+    } else {
+      await expect(result).rejects.toThrow(/Trusted publish/);
+      expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+      expect(ctx.patch).not.toHaveBeenCalled();
+    }
+  });
+
   it("rejects trusted publish tokens after trusted publisher rotation or deletion", async () => {
     const ctx = {
       runQuery: vi
@@ -5335,6 +5479,7 @@ describe("packages public queries", () => {
       repositoryOwner: "openclaw",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
+      ref: "refs/heads/main",
       environment: "clawhub-release",
     };
     const ctx = {
@@ -5349,6 +5494,8 @@ describe("packages public queries", () => {
           repositoryOwner: "openclaw",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
+          workflowRef:
+            "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
           environment: "clawhub-release",
           version: "1.0.0",
           sha: "abc123",
@@ -5417,6 +5564,7 @@ describe("packages public queries", () => {
       repositoryOwner: "openclaw",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
+      ref: "refs/heads/main",
     };
     const ctx = {
       runQuery: vi
@@ -5430,6 +5578,8 @@ describe("packages public queries", () => {
           repositoryOwner: "openclaw",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
+          workflowRef:
+            "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
           version: "1.0.0",
           sha: "abc123",
           ref: "refs/heads/main",

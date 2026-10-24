@@ -473,6 +473,8 @@ type PackageTrustedPublisherLike = {
   repositoryOwner: string;
   repositoryOwnerId: string;
   workflowFilename: string;
+  ref?: string;
+  reusableWorkflowRef?: string;
   environment?: string;
   createdAt: number;
   updatedAt: number;
@@ -506,6 +508,10 @@ function toPublicTrustedPublisher(trustedPublisher: PackageTrustedPublisherLike 
     repositoryOwner: trustedPublisher.repositoryOwner,
     repositoryOwnerId: trustedPublisher.repositoryOwnerId,
     workflowFilename: trustedPublisher.workflowFilename,
+    ...(trustedPublisher.ref ? { ref: trustedPublisher.ref } : {}),
+    ...(trustedPublisher.reusableWorkflowRef
+      ? { reusableWorkflowRef: trustedPublisher.reusableWorkflowRef }
+      : {}),
     ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
   };
 }
@@ -1697,6 +1703,8 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
         repositoryOwner: trustedPublisher.repositoryOwner,
         repositoryOwnerId: trustedPublisher.repositoryOwnerId,
         workflowFilename: trustedPublisher.workflowFilename,
+        ref: trustedPublisher.ref,
+        reusableWorkflowRef: trustedPublisher.reusableWorkflowRef,
         ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
       });
       const { token, prefix } = generateToken();
@@ -1716,6 +1724,8 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
           repositoryOwner: verified.repositoryOwner,
           repositoryOwnerId: verified.repositoryOwnerId,
           workflowFilename: verified.workflowFilename,
+          workflowRef: verified.workflowRef,
+          ...(verified.jobWorkflowRef ? { jobWorkflowRef: verified.jobWorkflowRef } : {}),
           ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
           runId: verified.runId,
           runAttempt: verified.runAttempt,
@@ -1738,6 +1748,8 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
             version: payload.version,
             repository: verified.repository,
             workflowFilename: verified.workflowFilename,
+            workflowRef: verified.workflowRef,
+            ...(verified.jobWorkflowRef ? { jobWorkflowRef: verified.jobWorkflowRef } : {}),
             ...(verified.environment ? { environment: verified.environment } : {}),
             runId: verified.runId,
             runAttempt: verified.runAttempt,
@@ -1760,6 +1772,10 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
             version: payload.version,
             repository: trustedPublisher.repository,
             workflowFilename: trustedPublisher.workflowFilename,
+            ...(trustedPublisher.ref ? { ref: trustedPublisher.ref } : {}),
+            ...(trustedPublisher.reusableWorkflowRef
+              ? { reusableWorkflowRef: trustedPublisher.reusableWorkflowRef }
+              : {}),
             ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
             decision: "rejected",
             reason: error instanceof Error ? error.message : "Token verification failed",
@@ -2287,6 +2303,8 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     ) as {
       repository: string;
       workflowFilename: string;
+      ref: string;
+      reusableWorkflowRef?: string;
       environment?: string;
     };
     const repositoryIdentity = await fetchGitHubRepositoryIdentity(body.repository);
@@ -2301,6 +2319,8 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         repositoryOwner: repositoryIdentity.repositoryOwner,
         repositoryOwnerId: repositoryIdentity.repositoryOwnerId,
         workflowFilename: body.workflowFilename,
+        ref: body.ref,
+        ...(body.reusableWorkflowRef ? { reusableWorkflowRef: body.reusableWorkflowRef } : {}),
         ...(body.environment ? { environment: body.environment } : {}),
       },
     );

@@ -2632,6 +2632,7 @@ describe("package commands", () => {
         repositoryOwner: "openclaw",
         repositoryOwnerId: "2",
         workflowFilename: "plugin-clawhub-release.yml",
+        ref: "refs/heads/main",
         environment: "clawhub-release",
       },
     });
@@ -2639,6 +2640,7 @@ describe("package commands", () => {
     await cmdSetPackageTrustedPublisher(makeOpts(), "@openclaw/zalo", {
       repository: "openclaw/openclaw",
       workflowFilename: "plugin-clawhub-release.yml",
+      ref: "refs/heads/main",
       environment: "clawhub-release",
     });
 
@@ -2652,6 +2654,7 @@ describe("package commands", () => {
         body: {
           repository: "openclaw/openclaw",
           workflowFilename: "plugin-clawhub-release.yml",
+          ref: "refs/heads/main",
           environment: "clawhub-release",
         },
       }),
@@ -2668,12 +2671,14 @@ describe("package commands", () => {
         repositoryOwner: "openclaw",
         repositoryOwnerId: "2",
         workflowFilename: "plugin-clawhub-release.yml",
+        ref: "refs/heads/main",
       },
     });
 
     await cmdSetPackageTrustedPublisher(makeOpts(), "@openclaw/zalo", {
       repository: "openclaw/openclaw",
       workflowFilename: "plugin-clawhub-release.yml",
+      ref: "refs/heads/main",
     });
 
     expect(authTokenMocks.requireAuthToken).toHaveBeenCalled();
@@ -2686,6 +2691,7 @@ describe("package commands", () => {
         body: {
           repository: "openclaw/openclaw",
           workflowFilename: "plugin-clawhub-release.yml",
+          ref: "refs/heads/main",
         },
       }),
       expect.anything(),
