@@ -42,8 +42,14 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - name: Install scanner boundary test CLI
+        run: npm install --global --prefix "$RUNNER_TEMP/clawhub-codex-test" @openai/codex@0.153.4
+
       - name: Coverage
         run: bun run ci:unit
+        env:
+          CODEX_SECURITY_SCAN_RUNTIME_DIR: ${{ runner.temp }}/clawhub-codex-test
+          CODEX_SECURITY_SCAN_TEST_CLI: ${{ runner.temp }}/clawhub-codex-test/bin/codex
 
   packages:
     name: packages
