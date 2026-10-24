@@ -660,7 +660,7 @@ describe("clawhub e2e", () => {
       },
     );
 
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toMatch(/Dry run/i);
     expect(result.stdout).toMatch(/openclaw-codex-app-server/);
     expect(result.stdout).toMatch(/code-plugin/i);
@@ -691,7 +691,7 @@ describe("clawhub e2e", () => {
       },
     );
 
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     const output = JSON.parse(result.stdout.trim()) as Record<string, unknown>;
     expect(String(output.name)).toMatch(/openclaw-codex-app-server/);
     expect(output.family).toBe("code-plugin");
