@@ -272,6 +272,216 @@ describe("skillTransfers", () => {
     );
   });
 
+  it("requestTransferInternal rejects a former org creator without current membership", async () => {
+    const insert = vi.fn(async () => "unexpected");
+
+    await expect(
+      requestTransferInternalHandler(
+        {
+          db: {
+            normalizeId: vi.fn(),
+            get: vi.fn(async (id: string) => {
+              if (id === "users:creator") return { _id: "users:creator", handle: "creator" };
+              if (id === "skills:1") {
+                return {
+                  _id: "skills:1",
+                  slug: "demo",
+                  displayName: "Demo",
+                  ownerUserId: "users:creator",
+                  ownerPublisherId: "publishers:org",
+                };
+              }
+              if (id === "publishers:org") {
+                return { _id: "publishers:org", kind: "org", handle: "team" };
+              }
+              return null;
+            }),
+            query: vi.fn((table: string) => {
+              if (table === "users") {
+                return {
+                  withIndex: () => ({
+                    unique: async () => ({ _id: "users:alice", handle: "alice" }),
+                  }),
+                };
+              }
+              if (table === "skillOwnershipTransfers") {
+                return { withIndex: () => ({ collect: async () => [] }) };
+              }
+              if (table === "publisherMembers") {
+                return { withIndex: () => ({ unique: async () => null }) };
+              }
+              throw new Error(`unexpected table ${table}`);
+            }),
+            patch: vi.fn(async () => {}),
+            insert,
+          },
+        } as never,
+        {
+          actorUserId: "users:creator",
+          skillId: "skills:1",
+          toUserHandle: "alice",
+        } as never,
+      ),
+    ).rejects.toThrow("Forbidden");
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("requestTransferInternal keeps legacy no-link personal publishers manageable", async () => {
+    const insert = vi.fn(async (table: string) => {
+      if (table === "skillOwnershipTransfers") return "skillOwnershipTransfers:new";
+      return "auditLogs:1";
+    });
+
+    const result = await requestTransferInternalHandler(
+      {
+        db: {
+          normalizeId: vi.fn(),
+          get: vi.fn(async (id: string) => {
+            if (id === "users:owner") return { _id: "users:owner", handle: "owner" };
+            if (id === "skills:1") {
+              return {
+                _id: "skills:1",
+                slug: "demo",
+                displayName: "Demo",
+                ownerUserId: "users:owner",
+                ownerPublisherId: "publishers:owner",
+              };
+            }
+            if (id === "publishers:owner") {
+              return { _id: "publishers:owner", kind: "user", handle: "owner" };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "users") {
+              return {
+                withIndex: () => ({
+                  unique: async () => ({ _id: "users:alice", handle: "alice" }),
+                }),
+              };
+            }
+            if (table === "skillOwnershipTransfers") {
+              return { withIndex: () => ({ collect: async () => [] }) };
+            }
+            throw new Error(`unexpected table ${table}`);
+          }),
+          patch: vi.fn(async () => {}),
+          insert,
+        },
+      } as never,
+      {
+        actorUserId: "users:owner",
+        skillId: "skills:1",
+        toUserHandle: "alice",
+      } as never,
+    );
+
+    expect(result).toMatchObject({ ok: true, transferId: "skillOwnershipTransfers:new" });
+  });
+
+  it("requestTransferInternal rejects a mislinked personal publisher owner", async () => {
+    const insert = vi.fn(async () => "unexpected");
+
+    await expect(
+      requestTransferInternalHandler(
+        {
+          db: {
+            normalizeId: vi.fn(),
+            get: vi.fn(async (id: string) => {
+              if (id === "users:owner") return { _id: "users:owner", handle: "owner" };
+              if (id === "skills:1") {
+                return {
+                  _id: "skills:1",
+                  slug: "demo",
+                  displayName: "Demo",
+                  ownerUserId: "users:owner",
+                  ownerPublisherId: "publishers:owner",
+                };
+              }
+              if (id === "publishers:owner") {
+                return {
+                  _id: "publishers:owner",
+                  kind: "user",
+                  handle: "owner",
+                  linkedUserId: "users:someone-else",
+                };
+              }
+              return null;
+            }),
+            query: vi.fn(() => {
+              return {
+                withIndex: () => ({
+                  unique: async () => ({ _id: "users:alice", handle: "alice" }),
+                  collect: async () => [],
+                }),
+              };
+            }),
+            patch: vi.fn(async () => {}),
+            insert,
+          },
+        } as never,
+        {
+          actorUserId: "users:owner",
+          skillId: "skills:1",
+          toUserHandle: "alice",
+        } as never,
+      ),
+    ).rejects.toThrow("Forbidden");
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("requestTransferInternal preserves platform-admin access to org-owned skills", async () => {
+    const insert = vi.fn(async (table: string) => {
+      if (table === "skillOwnershipTransfers") return "skillOwnershipTransfers:new";
+      return "auditLogs:1";
+    });
+
+    const result = await requestTransferInternalHandler(
+      {
+        db: {
+          normalizeId: vi.fn(),
+          get: vi.fn(async (id: string) => {
+            if (id === "users:admin") {
+              return { _id: "users:admin", handle: "admin", role: "admin" };
+            }
+            if (id === "skills:1") {
+              return {
+                _id: "skills:1",
+                slug: "demo",
+                displayName: "Demo",
+                ownerUserId: "users:creator",
+                ownerPublisherId: "publishers:org",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "users") {
+              return {
+                withIndex: () => ({
+                  unique: async () => ({ _id: "users:alice", handle: "alice" }),
+                }),
+              };
+            }
+            if (table === "skillOwnershipTransfers") {
+              return { withIndex: () => ({ collect: async () => [] }) };
+            }
+            throw new Error(`unexpected table ${table}`);
+          }),
+          patch: vi.fn(async () => {}),
+          insert,
+        },
+      } as never,
+      {
+        actorUserId: "users:admin",
+        skillId: "skills:1",
+        toUserHandle: "alice",
+      } as never,
+    );
+
+    expect(result).toMatchObject({ ok: true, transferId: "skillOwnershipTransfers:new" });
+  });
+
   it("acceptTransferInternal updates skill and alias ownership to the recipient publisher", async () => {
     const patch = vi.fn(async () => {});
     const insert = vi.fn(async () => "auditLogs:1");
@@ -347,6 +557,14 @@ describe("skillTransfers", () => {
             }
             if (id === "publishers:alice") {
               return newPublisher;
+            }
+            if (id === "publishers:owner") {
+              return {
+                _id: "publishers:owner",
+                kind: "user",
+                handle: "owner",
+                linkedUserId: "users:1",
+              };
             }
             return null;
           }),
@@ -598,6 +816,91 @@ describe("skillTransfers", () => {
       "skillOwnershipTransfers:1",
       expect.objectContaining({ status: "accepted" }),
     );
+  });
+
+  it("acceptTransferInternal cancels a pending transfer after org membership is removed", async () => {
+    const patch = vi.fn(async () => {});
+
+    const result = await acceptTransferInternalHandler(
+      {
+        db: {
+          normalizeId: vi.fn(),
+          get: vi.fn(async (id: string) => {
+            if (id === "users:recipient") {
+              return {
+                _id: "users:recipient",
+                handle: "recipient",
+                personalPublisherId: "publishers:recipient",
+              };
+            }
+            if (id === "users:creator") return { _id: "users:creator", handle: "creator" };
+            if (id === "skillOwnershipTransfers:1") {
+              return {
+                _id: "skillOwnershipTransfers:1",
+                skillId: "skills:1",
+                fromUserId: "users:creator",
+                toUserId: "users:recipient",
+                status: "pending",
+                requestedAt: Date.now() - 1_000,
+                expiresAt: Date.now() + 10_000,
+              };
+            }
+            if (id === "skills:1") {
+              return {
+                _id: "skills:1",
+                slug: "demo",
+                ownerUserId: "users:creator",
+                ownerPublisherId: "publishers:org",
+              };
+            }
+            if (id === "publishers:org") return { _id: "publishers:org", kind: "org" };
+            if (id === "publishers:recipient") {
+              return {
+                _id: "publishers:recipient",
+                kind: "user",
+                handle: "recipient",
+                linkedUserId: "users:recipient",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "publisherMembers") {
+              return { withIndex: () => ({ unique: async () => null }) };
+            }
+            if (table === "publishers") {
+              return {
+                withIndex: () => ({
+                  unique: async () => ({
+                    _id: "publishers:recipient",
+                    kind: "user",
+                    handle: "recipient",
+                    linkedUserId: "users:recipient",
+                  }),
+                }),
+              };
+            }
+            if (table === "skillSlugAliases" || table === "skillEmbeddings") {
+              return { withIndex: () => ({ collect: async () => [] }) };
+            }
+            throw new Error(`unexpected table ${table}`);
+          }),
+          patch,
+          insert: vi.fn(async () => "auditLogs:1"),
+        },
+      } as never,
+      {
+        actorUserId: "users:recipient",
+        transferId: "skillOwnershipTransfers:1",
+      } as never,
+    );
+
+    expect(result).toEqual({ ok: false, error: "Transfer is no longer valid" });
+    expect(patch).toHaveBeenCalledWith(
+      "skillOwnershipTransfers:1",
+      expect.objectContaining({ status: "cancelled" }),
+    );
+    expect(patch).not.toHaveBeenCalledWith("skills:1", expect.anything());
   });
 
   it("acceptTransferInternal cancels stale transfer when ownership changed", async () => {
