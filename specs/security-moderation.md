@@ -193,7 +193,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   permission profile supplied through trusted CLI overrides, with only minimal
   system files, the read-only artifact workspace, and a dedicated pinned CLI
   installation readable. `CODEX_SECURITY_SCAN_RUNTIME_DIR` names that installation
-  and must not overlap the credential home or artifact workspace. An ordinary
+  and must not overlap the checkout, credential home, or artifact workspace in
+  either direction. Resolve symlinks and existing ancestors of a not-yet-created
+  credential home before checking these boundaries; all four locations must be
+  disjoint. An ordinary
   globally readable `read-only` sandbox is insufficient for this boundary.
 - The Codex child receives only core runtime environment variables and the
   credential-home path. SkillSpector retains provider authentication separately;

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { lstatSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
@@ -115,7 +116,12 @@ const DEFAULT_DIAGNOSTICS_ROOT = join(
   ".artifacts/codex-security-scan",
   process.env.GITHUB_RUN_ID ?? `local-${process.pid}`,
 );
-const LOCAL_CODEX_HOME = join(root, ".codex/runtime/codex-workers/security-scan");
+const LOCAL_CODEX_HOME = join(
+  homedir(),
+  ".cache/clawhub/codex-workers",
+  createHash("sha256").update(realpathSync(root)).digest("hex"),
+  "security-scan",
+);
 const ARTIFACT_SIGNAL_FILE_EXTENSIONS = new Set([
   ".cjs",
   ".css",
@@ -985,27 +991,60 @@ function codexScanTimeoutMs() {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CODEX_SCAN_TIMEOUT_MS;
 }
 
+// Resolve existing ancestors so a new credential home cannot hide behind a symlink.
+// A dangling symlink fails closed instead of being treated as a missing directory.
+function canonicalPath(path: string, allowMissing = false): string {
+  const absolute = resolve(path);
+  try {
+    return realpathSync(absolute);
+  } catch (error) {
+    if (!allowMissing || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    try {
+      lstatSync(absolute);
+      throw new Error(`Cannot resolve path: ${absolute}`);
+    } catch (statError) {
+      if ((statError as NodeJS.ErrnoException).code !== "ENOENT") throw statError;
+    }
+    const parent = dirname(absolute);
+    if (parent === absolute) throw error;
+    return join(canonicalPath(parent, true), basename(absolute));
+  }
+}
+
 function codexRuntimeDir(workspace?: string) {
   const configured = process.env.CODEX_SECURITY_SCAN_RUNTIME_DIR?.trim();
   if (!configured) throw new Error("CODEX_SECURITY_SCAN_RUNTIME_DIR is required");
-  const runtime = resolve(configured);
-  const authHome = resolve(
+  if (!isAbsolute(configured)) {
+    throw new Error(
+      "CODEX_SECURITY_SCAN_RUNTIME_DIR must be a dedicated CLI installation directory",
+    );
+  }
+  const runtime = canonicalPath(configured);
+  if (!statSync(runtime).isDirectory()) {
+    throw new Error(
+      "CODEX_SECURITY_SCAN_RUNTIME_DIR must be a dedicated CLI installation directory",
+    );
+  }
+  const authHome = canonicalPath(
     resolveCodexWorkerHome(process.env, LOCAL_CODEX_HOME) ?? join(homedir(), ".codex"),
+    true,
   );
+  const checkout = canonicalPath(root);
+  const artifactRoot = workspace ? canonicalPath(workspace) : undefined;
   const contains = (parent: string, child: string) =>
-    child === parent || child.startsWith(`${parent}${sep}`);
-  const artifactRoot = workspace ? resolve(workspace) : undefined;
-  if (artifactRoot && (contains(artifactRoot, authHome) || contains(authHome, artifactRoot))) {
+    child === parent || child.startsWith(parent.endsWith(sep) ? parent : `${parent}${sep}`);
+  const overlaps = (a: string, b: string) => contains(a, b) || contains(b, a);
+  if (artifactRoot && overlaps(authHome, artifactRoot)) {
     throw new Error("The Codex credential home must be separate from the artifact workspace");
   }
+  if (overlaps(authHome, checkout) || (artifactRoot && overlaps(checkout, artifactRoot))) {
+    throw new Error("The checkout, credential home, and artifact workspace must be separate");
+  }
   if (
-    !isAbsolute(configured) ||
     dirname(runtime) === runtime ||
-    [authHome, root, ...(artifactRoot ? [artifactRoot] : [])].some((privatePath) =>
-      contains(runtime, privatePath),
-    ) ||
-    contains(authHome, runtime) ||
-    (artifactRoot !== undefined && contains(artifactRoot, runtime))
+    [authHome, checkout, ...(artifactRoot ? [artifactRoot] : [])].some((path) =>
+      overlaps(runtime, path),
+    )
   ) {
     throw new Error(
       "CODEX_SECURITY_SCAN_RUNTIME_DIR must be a dedicated CLI installation directory",

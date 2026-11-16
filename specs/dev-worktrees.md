@@ -69,9 +69,10 @@ Local worktree startup must not consume the developer's Codex account
 implicitly. Workers that invoke Codex CLI, including ClawScan and Skill Card
 generation, are disabled in local dev unless the process has
 `CLAWHUB_ALLOW_LOCAL_CODEX_SCAN=1`; GitHub Actions workers remain allowed. When
-local Codex workers are explicitly enabled, they must default to an ignored
-worktree-local `CODEX_HOME` under `.codex/runtime/codex-workers/` unless the
-operator provides `CODEX_HOME`.
+local Codex workers are explicitly enabled, Skill Card defaults to an ignored
+worktree-local `CODEX_HOME` under `.codex/runtime/codex-workers/`. Security scan
+uses a per-worktree home under `~/.cache/clawhub/codex-workers/`, outside the
+checkout. An operator may provide a separate `CODEX_HOME` instead.
 
 For the security-scan worker, set `CODEX_SECURITY_SCAN_RUNTIME_DIR` to an
 absolute, dedicated installation directory separate from the checkout,
@@ -79,7 +80,9 @@ credential home, and artifact workspace. Install `@openai/codex@0.153.4` into
 that prefix (for example, `npm install --global --prefix "$CODEX_SECURITY_SCAN_RUNTIME_DIR" @openai/codex@0.153.4`).
 The worker runs `bin/codex` from that directory and checks its exact version
 before claiming jobs; it does not fall back to the checkout's CLI. The directory
-must not contain the checkout or credential home. The local opt-in can initialize
+must not overlap the checkout or credential home in either direction, including
+through symlinks. The credential home and artifact workspace must also be
+separate from each other and from the checkout. The local opt-in can initialize
 the isolated worker home using `OPENAI_API_KEY`, or an explicitly supplied
 `CODEX_HOME` must already be authenticated. These requirements apply to security
 scans only; Skill Card has its own runtime requirements. See

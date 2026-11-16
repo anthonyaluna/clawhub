@@ -2,7 +2,8 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, parse } from "node:path";
+import { dirname, join, parse } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertCodexWorkerExecutionAllowed,
@@ -50,10 +51,15 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(env.PATH).toBe(process.env.PATH);
   });
 
-  it("denies off-workspace file reads without disabling the trusted CLI runtime", () => {
-    const runtime = join(tmpdir(), "clawhub-codex-runtime");
+  it("denies off-workspace file reads without disabling the trusted CLI runtime", async () => {
+    const base = await tempDir();
+    const runtime = join(base, "runtime");
+    const workspace = join(base, "workspace");
+    await mkdir(runtime);
+    await mkdir(workspace);
+    vi.stubEnv("CODEX_HOME", join(base, "new-auth"));
     vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", runtime);
-    const args = buildCodexExecArgs("/tmp/scan-artifact");
+    const args = buildCodexExecArgs(workspace);
     expect(args).not.toContain("--sandbox");
     expect(args).toContain('default_permissions="clawscan"');
     const filesystem = args.find((arg) => arg.startsWith("permissions.clawscan.filesystem="));
@@ -66,34 +72,75 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(args).toContain("--ephemeral");
   });
 
-  it("rejects missing or root-wide runtime permissions before starting a scan", () => {
+  it("rejects missing, relative, or root-wide runtime permissions", async () => {
+    const workspace = await tempDir();
     vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", "");
-    expect(() => buildCodexExecArgs("/tmp/scan-artifact")).toThrow("RUNTIME_DIR");
+    expect(() => buildCodexExecArgs(workspace)).toThrow("RUNTIME_DIR");
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", "relative");
+    expect(() => buildCodexExecArgs(workspace)).toThrow("dedicated");
     vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", parse(tmpdir()).root);
-    expect(() => buildCodexExecArgs("/tmp/scan-artifact")).toThrow("dedicated");
+    expect(() => buildCodexExecArgs(workspace)).toThrow("dedicated");
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", join(workspace, "missing"));
+    expect(() => buildCodexExecArgs(workspace)).toThrow();
   });
 
   it("preserves SkillSpector provider authentication without forwarding the worker token", () => {
     vi.stubEnv("OPENAI_API_KEY", "synthetic-provider-secret");
-    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "synthetic-worker-secret");
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "synthetic-worker-token");
     expect(skillSpectorEnv().OPENAI_API_KEY).toBe("synthetic-provider-secret");
     expect(skillSpectorEnv().SECURITY_SCAN_WORKER_TOKEN).toBeUndefined();
   });
 
-  it("rejects runtime permissions that also expose the credential home or artifact", () => {
-    const base = join(tmpdir(), "clawhub-overlapping-runtime");
+  it("rejects overlaps in either direction among runtime, auth, checkout, and workspace", async () => {
+    const base = await tempDir();
+    const runtime = join(base, "runtime");
+    const workspace = join(base, "workspace");
+    await mkdir(runtime);
+    await mkdir(workspace);
     vi.stubEnv("CODEX_HOME", join(base, "auth"));
     vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", base);
-    expect(() => buildCodexExecArgs(join(tmpdir(), "artifact"))).toThrow("dedicated");
-    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", join(base, "artifact", "runtime"));
-    expect(() => buildCodexExecArgs(join(base, "artifact"))).toThrow("dedicated");
+    expect(() => buildCodexExecArgs(workspace)).toThrow("dedicated");
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", runtime);
+    vi.stubEnv("CODEX_HOME", join(runtime, "new-auth"));
+    expect(() => buildCodexExecArgs(workspace)).toThrow("dedicated");
+    vi.stubEnv("CODEX_HOME", join(workspace, "new-auth"));
+    expect(() => buildCodexExecArgs(workspace)).toThrow("credential home");
+    vi.stubEnv("CODEX_HOME", base);
+    expect(() => buildCodexExecArgs(workspace)).toThrow("credential home");
+    vi.stubEnv("CODEX_HOME", join(base, "auth"));
+    const checkout = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", join(checkout, "scripts"));
+    expect(() => buildCodexExecArgs(workspace)).toThrow("dedicated");
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", runtime);
+    vi.stubEnv("CODEX_HOME", join(checkout, "new-auth"));
+    expect(() => buildCodexExecArgs(workspace)).toThrow("checkout");
+    vi.stubEnv("CODEX_HOME", join(base, "auth"));
+    expect(() => buildCodexExecArgs(join(checkout, "scripts"))).toThrow("checkout");
   });
 
-  it("rejects a credential home inside the model-readable workspace", () => {
-    const workspace = join(tmpdir(), "clawhub-readable-workspace");
-    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", join(tmpdir(), "clawhub-separate-runtime"));
-    vi.stubEnv("CODEX_HOME", join(workspace, ".codex"));
-    expect(() => buildCodexExecArgs(workspace)).toThrow("credential home");
+  it("resolves aliases and missing auth descendants before comparing boundaries", async () => {
+    const base = await tempDir();
+    const runtime = join(base, "runtime");
+    const workspace = join(base, "workspace");
+    const authParent = join(base, "auth-parent");
+    await mkdir(runtime);
+    await mkdir(workspace);
+    await mkdir(authParent);
+    await symlink(authParent, join(base, "runtime-alias"));
+    vi.stubEnv("CODEX_HOME", join(authParent, "not-yet-created", "auth"));
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", join(base, "runtime-alias"));
+    expect(() => buildCodexExecArgs(workspace)).toThrow("dedicated");
+    await symlink(runtime, join(base, "auth-alias"));
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", runtime);
+    vi.stubEnv("CODEX_HOME", join(base, "auth-alias", "not-yet-created"));
+    expect(() => buildCodexExecArgs(workspace)).toThrow("dedicated");
+    await symlink(join(base, "absent"), join(base, "dangling"));
+    vi.stubEnv("CODEX_HOME", join(base, "dangling", "auth"));
+    expect(() => buildCodexExecArgs(workspace)).toThrow();
+    vi.stubEnv("CODEX_HOME", join(base, "separate-auth"));
+    await symlink(runtime, join(base, "safe-runtime-alias"));
+    vi.stubEnv("CODEX_SECURITY_SCAN_RUNTIME_DIR", join(base, "safe-runtime-alias"));
+    expect(buildCodexExecArgs(workspace).join(" ")).toContain(`${JSON.stringify(runtime)}="read"`);
   });
 
   it.skipIf(process.platform !== "linux" || !process.env.CODEX_SECURITY_SCAN_TEST_CLI)(
