@@ -153,6 +153,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Package publish upload boundary
 
+- CLI multipart transports must send scalar values and display filenames as
+  literal multipart data, never as curl form directives. Only process-created
+  staging files containing the intended request bytes may be read by curl;
+  artifact display paths must not select local staging paths. Preserve repeated
+  fields, file bytes, MIME types, and nested display paths in both runtimes.
 - Package publish is multipart-only. `POST /api/v1/packages` must reject JSON
   request bodies, including bodies that reference pre-existing storage IDs.
 - Public HTTP package publish payloads must not accept caller-supplied `files`
