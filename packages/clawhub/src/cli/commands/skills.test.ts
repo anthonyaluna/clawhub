@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import * as fsPromises from "node:fs/promises";
+import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
@@ -641,7 +642,7 @@ describe("cmdUpdate", () => {
     });
     expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
       new Uint8Array([1, 2, 3]),
-      "/work/skills/aiq-deploy",
+      join("/work/skills/aiq-deploy"),
       "skills/aiq-deploy",
     );
     expect(mockSpinner.succeed).toHaveBeenCalledWith(
@@ -696,7 +697,7 @@ describe("cmdUpdate", () => {
     expect(mockPromptConfirm).toHaveBeenCalledWith(
       `aiq-deploy: local changes (no match). Overwrite with ${commit.slice(0, 12)}?`,
     );
-    expect(rm).toHaveBeenCalledWith("/work/skills/aiq-deploy", {
+    expect(rm).toHaveBeenCalledWith(join("/work/skills/aiq-deploy"), {
       recursive: true,
       force: true,
     });
@@ -705,7 +706,7 @@ describe("cmdUpdate", () => {
     });
     expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
       new Uint8Array([1, 2, 3]),
-      "/work/skills/aiq-deploy",
+      join("/work/skills/aiq-deploy"),
       "skills/aiq-deploy",
     );
     expect(mockSpinner.succeed).toHaveBeenCalledWith(
@@ -755,7 +756,7 @@ describe("cmdUpdate", () => {
       "https://clawhub.ai",
       expect.objectContaining({ slug: "demo", version: "2.0.0" }),
     );
-    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/demo", {
+    expect(writeSkillOrigin).toHaveBeenCalledWith(join("/work/skills/demo"), {
       version: 1,
       registry: "https://clawhub.ai",
       slug: "demo",
@@ -1024,10 +1025,10 @@ describe("cmdInstall", () => {
     });
     expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
       new Uint8Array([1, 2, 3]),
-      "/work/skills/aiq-deploy",
+      join("/work/skills/aiq-deploy"),
       "skills/aiq-deploy",
     );
-    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/aiq-deploy", {
+    expect(writeSkillOrigin).toHaveBeenCalledWith(join("/work/skills/aiq-deploy"), {
       version: 1,
       registry: "https://clawhub.ai",
       slug: "aiq-deploy",
@@ -1206,7 +1207,7 @@ describe("cmdInstall", () => {
 
     await cmdInstall(makeOpts(), "demo", "9.9.9", true);
 
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
+    expect(rm).toHaveBeenCalledWith(join("/work/skills/demo"), { recursive: true, force: true });
     expect(mockDownloadZip).toHaveBeenCalledWith(
       "https://clawhub.ai",
       expect.objectContaining({ slug: "demo", version: "9.9.9" }),
@@ -1243,7 +1244,7 @@ describe("cmdInstall", () => {
 
     await cmdInstall(makeOpts(), "demo", undefined, true);
 
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
+    expect(rm).toHaveBeenCalledWith(join("/work/skills/demo"), { recursive: true, force: true });
     expect(mockDownloadZip).toHaveBeenCalled();
     const rmOrder = vi.mocked(rm).mock.invocationCallOrder[0];
     const downloadOrder = mockDownloadZip.mock.invocationCallOrder[0];
@@ -1274,7 +1275,7 @@ describe("cmdUninstall", () => {
     await cmdUninstall(makeOpts(), "demo", {}, true);
 
     expect(mockPromptConfirm).toHaveBeenCalledWith("Uninstall demo?");
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
+    expect(rm).toHaveBeenCalledWith(join("/work/skills/demo"), { recursive: true, force: true });
     expect(writeLockfile).toHaveBeenCalled();
   });
 
@@ -1320,7 +1321,7 @@ describe("cmdUninstall", () => {
 
     await cmdUninstall(makeOpts(), "demo", { yes: true }, false);
 
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
+    expect(rm).toHaveBeenCalledWith(join("/work/skills/demo"), { recursive: true, force: true });
     expect(writeLockfile).toHaveBeenCalledWith("/work", {
       version: 1,
       skills: {},
@@ -1370,7 +1371,7 @@ describe("cmdUninstall", () => {
 
     await cmdUninstall(makeOpts(), "demo", { yes: true }, false);
 
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
+    expect(rm).toHaveBeenCalledWith(join("/work/skills/demo"), { recursive: true, force: true });
     expect(writeLockfile).toHaveBeenCalledWith("/work", {
       version: 1,
       skills: { other: { version: "2.0.0", installedAt: 456 } },
@@ -1387,6 +1388,6 @@ describe("cmdUninstall", () => {
 
     await cmdUninstall(makeOpts(), "  demo  ", { yes: true }, false);
 
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
+    expect(rm).toHaveBeenCalledWith(join("/work/skills/demo"), { recursive: true, force: true });
   });
 });

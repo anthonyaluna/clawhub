@@ -1,8 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import crossSpawn from "cross-spawn";
 import ignore from "ignore";
 import mime from "mime";
 import semver from "semver";
@@ -580,7 +580,7 @@ async function createClawPackFromFolder(options: {
   packDestination: string;
   cwd: string;
 }): Promise<PackedClawPack> {
-  const result = spawnSync(
+  const result = crossSpawn.sync(
     "npm",
     [
       "pack",

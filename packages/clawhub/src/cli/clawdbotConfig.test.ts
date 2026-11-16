@@ -2,11 +2,16 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resolveHome } from "../homedir.js";
 import { resolveClawdbotDefaultWorkspace, resolveClawdbotSkillRoots } from "./clawdbotConfig.js";
 
 const originalEnv = { ...process.env };
+
+beforeEach(() => {
+  // These fixtures explicitly select HOME, including on Windows.
+  delete process.env.USERPROFILE;
+});
 
 afterEach(() => {
   process.env = { ...originalEnv };
@@ -88,9 +93,9 @@ describe("resolveClawdbotSkillRoots", () => {
 
     const config = `{
       agents: {
-        defaults: { workspace: "${workspaceMain}", },
+        defaults: { workspace: ${JSON.stringify(workspaceMain)}, },
         list: [
-          { id: 'main', workspace: "${workspaceList}", default: true },
+          { id: 'main', workspace: ${JSON.stringify(workspaceList)}, default: true },
         ],
       },
     }`;
@@ -116,8 +121,8 @@ describe("resolveClawdbotSkillRoots", () => {
     const config = `{
       agents: {
         list: [
-          { id: 'main', workspace: "${workspaceMain}", default: true },
-          { id: 'work', workspace: "${workspaceWork}" },
+          { id: 'main', workspace: ${JSON.stringify(workspaceMain)}, default: true },
+          { id: 'work', workspace: ${JSON.stringify(workspaceWork)} },
         ],
       },
     }`;
@@ -141,7 +146,7 @@ describe("resolveClawdbotSkillRoots", () => {
     process.env.OPENCLAW_CONFIG_PATH = join(openclawStateDir, "openclaw.json");
 
     const config = `{
-      agent: { workspace: "${join(base, "workspace-main")}" },
+      agent: { workspace: ${JSON.stringify(join(base, "workspace-main"))} },
     }`;
     await mkdir(join(base, "config"), { recursive: true });
     await writeFile(configPath, config, "utf8");
@@ -223,7 +228,7 @@ describe("resolveClawdbotSkillRoots", () => {
     await mkdir(stateDir, { recursive: true });
     const config = `{
       agents: {
-        defaults: { workspace: "${workspace}", },
+        defaults: { workspace: ${JSON.stringify(workspace)}, },
       },
     }`;
     await writeFile(configPath, config, "utf8");

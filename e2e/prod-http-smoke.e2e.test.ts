@@ -107,7 +107,7 @@ async function fetchHtml(pathname: string) {
   });
   expect(response.ok).toBe(true);
   expect(response.headers.get("content-type")).toContain("text/html");
-  return response.text();
+  return { html: await response.text(), url: response.url };
 }
 
 type SkillDetailResponse = {
@@ -121,14 +121,16 @@ let skillDetailPromise: Promise<SkillDetailResponse> | null = null;
 async function fetchSkillDetail() {
   if (!skillDetailPromise) {
     skillDetailPromise = (async () => {
-      const response = await fetchWithRetry(
-        new URL(`/api/v1/skills/${getSkillSlug()}`, getSiteBase()),
-        {
-          headers: { Accept: "application/json" },
-        },
-      );
+      const url = new URL(`/api/v1/skills/${encodeURIComponent(getSkillSlug())}`, getSiteBase());
+      url.searchParams.set("owner", getSkillOwner());
+      const response = await fetchWithRetry(url, {
+        headers: { Accept: "application/json" },
+      });
       expect(response.ok).toBe(true);
-      return (await response.json()) as SkillDetailResponse;
+      const detail = (await response.json()) as SkillDetailResponse;
+      expect(detail.owner.handle?.toLowerCase()).toBe(getSkillOwner().toLowerCase());
+      expect(detail.skill.slug).toBe(getSkillSlug());
+      return detail;
     })();
   }
 
@@ -137,7 +139,7 @@ async function fetchSkillDetail() {
 
 describe("prod http smoke", () => {
   it("serves the home page shell from prod", async () => {
-    const html = await fetchHtml("/");
+    const { html } = await fetchHtml("/");
 
     expect(html).toContain("<title>ClawHub");
     expect(html).toContain('href="/skills"');
@@ -148,12 +150,18 @@ describe("prod http smoke", () => {
   it("serves SSR skill html for a public skill page", async () => {
     const detail = await fetchSkillDetail();
     const owner = detail.owner.handle || getSkillOwner();
-    const html = await fetchHtml(`/${owner}/${detail.skill.slug}`);
+    const encodedOwner = encodeURIComponent(owner);
+    const encodedSlug = encodeURIComponent(detail.skill.slug);
+    const { html, url } = await fetchHtml(`/${encodedOwner}/${encodedSlug}`);
+    const resolved = new URL(url);
+    expect(resolved.origin).toBe(new URL(getSiteBase()).origin);
+    expect([`/${encodedOwner}/${encodedSlug}`, `/${encodedOwner}/skills/${encodedSlug}`]).toContain(
+      resolved.pathname,
+    );
 
     expect(html).toContain(`<title>${detail.skill.displayName} — ClawHub</title>`);
-    expect(html).toContain(
-      `<link rel="canonical" href="${getSiteBase()}/${owner}/${detail.skill.slug}"/>`,
-    );
+    const canonicalLink = /<link\b[^>]*\brel="canonical"[^>]*>/i.exec(html)?.[0];
+    expect(canonicalLink).toContain(`href="${resolved.origin}${resolved.pathname}"`);
     if (detail.skill.summary) {
       expect(html).toContain(detail.skill.summary);
     }

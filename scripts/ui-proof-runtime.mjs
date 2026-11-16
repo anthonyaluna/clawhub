@@ -32,7 +32,7 @@ export function createProofContext({ lane, outputDir, page }) {
     },
     async step(name, fn) {
       const slug = uniqueSlug(sanitizeStepName(name), used);
-      const screenshot = path.join("screenshots", `${slug}.png`);
+      const screenshot = path.posix.join("screenshots", `${slug}.png`);
       const screenshotPath = path.join(outputDir, screenshot);
       await fs.mkdir(path.dirname(screenshotPath), { recursive: true });
       const entry = {
