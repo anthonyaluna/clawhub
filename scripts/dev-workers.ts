@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isCodexWorkerExecutionAllowed, localCodexWorkerOptInReason } from "./codex-worker-guard";
 
@@ -37,7 +37,7 @@ export const WORKERS: WorkerDefinition[] = [
     label: "Security scan",
     script: "scripts/security/run-codex-scan-worker.ts",
     // Shared Convex worker credential used by security and Skill Card workers.
-    requiredEnv: ["CONVEX_URL", "SECURITY_SCAN_WORKER_TOKEN"],
+    requiredEnv: ["CONVEX_URL", "SECURITY_SCAN_WORKER_TOKEN", "CODEX_SECURITY_SCAN_RUNTIME_DIR"],
     requiresCodexCli: true,
     productionWorkflow: ".github/workflows/security-scan-codex.yml",
   },
@@ -235,6 +235,10 @@ export function validateWorkerEnv(worker: WorkerDefinition, env: NodeJS.ProcessE
   if (worker.requiredAnyEnv && !worker.requiredAnyEnv.some((key) => Boolean(env[key]?.trim()))) {
     missing.push(worker.requiredAnyEnv.join(" or "));
   }
+  const runtime = env.CODEX_SECURITY_SCAN_RUNTIME_DIR?.trim();
+  if (worker.id === "security-scan" && runtime && !isAbsolute(runtime)) {
+    missing.push("CODEX_SECURITY_SCAN_RUNTIME_DIR (must be absolute)");
+  }
   return missing;
 }
 
@@ -340,7 +344,7 @@ async function main() {
     .filter((entry) => entry.missing.length > 0);
   if (missingByWorker.length > 0) {
     for (const { worker, missing } of missingByWorker) {
-      console.error(`${worker.id} is missing: ${missing.join(", ")}`);
+      console.error(`${worker.id} needs configuration: ${missing.join(", ")}`);
       console.error(`Production workflow: ${worker.productionWorkflow}`);
     }
     console.error("");
