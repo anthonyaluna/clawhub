@@ -80,6 +80,7 @@ describe("dev-workers", () => {
     const env: NodeJS.ProcessEnv = {
       VITE_CONVEX_URL: "https://dev.example",
       SECURITY_SCAN_WORKER_TOKEN: "from-shell",
+      CODEX_SECURITY_SCAN_RUNTIME_DIR: "/opt/clawhub-codex",
     };
 
     const loaded = await loadDevWorkerEnv({ cwd: root, env });
@@ -208,6 +209,20 @@ describe("dev-workers", () => {
 
     expect(validateWorkerEnv(worker, { CONVEX_URL: "https://dev.example" })).toEqual([
       "SECURITY_SCAN_WORKER_TOKEN",
+      "CODEX_SECURITY_SCAN_RUNTIME_DIR",
     ]);
+    expect(
+      validateWorkerEnv(worker, {
+        CONVEX_URL: "https://dev.example",
+        SECURITY_SCAN_WORKER_TOKEN: "token",
+        CODEX_SECURITY_SCAN_RUNTIME_DIR: "relative/path",
+      }),
+    ).toEqual(["CODEX_SECURITY_SCAN_RUNTIME_DIR (must be absolute)"]);
+    expect(
+      validateWorkerEnv(WORKERS[1]!, {
+        CONVEX_URL: "https://dev.example",
+        SECURITY_SCAN_WORKER_TOKEN: "token",
+      }),
+    ).toEqual([]);
   });
 });

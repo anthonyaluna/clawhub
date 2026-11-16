@@ -73,6 +73,18 @@ local Codex workers are explicitly enabled, they must default to an ignored
 worktree-local `CODEX_HOME` under `.codex/runtime/codex-workers/` unless the
 operator provides `CODEX_HOME`.
 
+For the security-scan worker, set `CODEX_SECURITY_SCAN_RUNTIME_DIR` to an
+absolute, dedicated installation directory separate from the checkout,
+credential home, and artifact workspace. Install `@openai/codex@0.153.4` into
+that prefix (for example, `npm install --global --prefix "$CODEX_SECURITY_SCAN_RUNTIME_DIR" @openai/codex@0.153.4`).
+The worker runs `bin/codex` from that directory and checks its exact version
+before claiming jobs; it does not fall back to the checkout's CLI. The directory
+must not contain the checkout or credential home. The local opt-in can initialize
+the isolated worker home using `OPENAI_API_KEY`, or an explicitly supplied
+`CODEX_HOME` must already be authenticated. These requirements apply to security
+scans only; Skill Card has its own runtime requirements. See
+`specs/security-moderation.md` for the isolation contract.
+
 ## Seeding Contract
 
 `bun run seed:dev` uses the same worktree setup helper and the same local Convex readiness checks as the detached dev server. It must remain the documented default seed command. Lower-level Convex calls and `seed:public-corpus` are recovery or fixture-authoring tools, not the first-run path.
