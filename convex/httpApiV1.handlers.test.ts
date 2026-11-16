@@ -10794,6 +10794,7 @@ describe("httpApiV1 handlers", () => {
       repositoryOwner: "openclaw",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
+      workflowRef: "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
       environment: "clawhub-release",
       runId: "101",
       runAttempt: "1",
@@ -10825,6 +10826,7 @@ describe("httpApiV1 handlers", () => {
           repositoryOwner: "openclaw",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
+          ref: "refs/heads/main",
           environment: "clawhub-release",
         };
       }
@@ -10862,9 +10864,22 @@ describe("httpApiV1 handlers", () => {
         version: "1.0.0",
         repository: "openclaw/openclaw",
         workflowFilename: "plugin-clawhub-release.yml",
+        ref: "refs/heads/main",
         environment: "clawhub-release",
         runId: "101",
         sha: "abc123",
+      }),
+    );
+    expect(verifyGitHubActionsTrustedPublishJwt).toHaveBeenCalledWith(
+      "gh.jwt",
+      expect.objectContaining({ ref: "refs/heads/main" }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        workflowRef:
+          "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
+        ref: "refs/heads/main",
       }),
     );
   });
@@ -10876,6 +10891,7 @@ describe("httpApiV1 handlers", () => {
       repositoryOwner: "openclaw",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
+      workflowRef: "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
       environment: "clawhub-release",
       runId: "101",
       runAttempt: "1",
@@ -10907,6 +10923,7 @@ describe("httpApiV1 handlers", () => {
           repositoryOwner: "openclaw",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
+          ref: "refs/heads/main",
         };
       }
       return null;
@@ -10939,11 +10956,24 @@ describe("httpApiV1 handlers", () => {
         version: "1.0.0",
         repository: "openclaw/openclaw",
         workflowFilename: "plugin-clawhub-release.yml",
+        ref: "refs/heads/main",
         runId: "101",
         sha: "abc123",
       }),
     );
     expect(createCall?.[1]).not.toHaveProperty("environment");
+    expect(verifyGitHubActionsTrustedPublishJwt).toHaveBeenCalledWith(
+      "gh.jwt",
+      expect.objectContaining({ ref: "refs/heads/main" }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        workflowRef:
+          "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
+        ref: "refs/heads/main",
+      }),
+    );
   });
 
   it("sets trusted publisher config for a package", async () => {
@@ -10968,6 +10998,7 @@ describe("httpApiV1 handlers", () => {
         repositoryOwner: "openclaw",
         repositoryOwnerId: "2",
         workflowFilename: "plugin-clawhub-release.yml",
+        ref: "refs/heads/main",
         environment: "clawhub-release",
       };
     });
@@ -10985,6 +11016,7 @@ describe("httpApiV1 handlers", () => {
           body: JSON.stringify({
             repository: "https://github.com/openclaw/openclaw",
             workflowFilename: "plugin-clawhub-release.yml",
+            ref: "refs/heads/main",
             environment: "clawhub-release",
           }),
         },
@@ -11002,6 +11034,7 @@ describe("httpApiV1 handlers", () => {
         packageName: "@openclaw/demo-plugin",
         repository: "openclaw/openclaw",
         workflowFilename: "plugin-clawhub-release.yml",
+        ref: "refs/heads/main",
         environment: "clawhub-release",
       }),
     );
@@ -11293,6 +11326,7 @@ describe("httpApiV1 handlers", () => {
         repositoryOwner: "openclaw",
         repositoryOwnerId: "2",
         workflowFilename: "plugin-clawhub-release.yml",
+        ref: "refs/heads/main",
       };
     });
 
@@ -11309,6 +11343,7 @@ describe("httpApiV1 handlers", () => {
           body: JSON.stringify({
             repository: "https://github.com/openclaw/openclaw",
             workflowFilename: "plugin-clawhub-release.yml",
+            ref: "refs/heads/main",
           }),
         },
       ),
@@ -11326,6 +11361,7 @@ describe("httpApiV1 handlers", () => {
         repositoryOwner: "openclaw",
         repositoryOwnerId: "2",
         workflowFilename: "plugin-clawhub-release.yml",
+        ref: "refs/heads/main",
       },
     });
     const setCall = runMutation.mock.calls.find(
@@ -11338,6 +11374,7 @@ describe("httpApiV1 handlers", () => {
         packageName: "@openclaw/demo-plugin",
         repository: "openclaw/openclaw",
         workflowFilename: "plugin-clawhub-release.yml",
+        ref: "refs/heads/main",
       }),
     );
     expect(setCall?.[1]).not.toHaveProperty("environment");
