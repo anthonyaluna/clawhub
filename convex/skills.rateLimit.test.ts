@@ -6,7 +6,6 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-import { internal } from "./_generated/api";
 import {
   approveSkillByHashInternal,
   backfillLatestSkillModerationInternal,
@@ -1491,7 +1490,7 @@ describe("skills anti-spam guards", () => {
     ).toBe(false);
   });
 
-  it("schedules owner autoban when the latest version ClawScan verdict becomes malicious", async () => {
+  it("quarantines an org member's malicious version without banning the legacy owner", async () => {
     const version = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -1505,11 +1504,13 @@ describe("skills anti-spam guards", () => {
         checkedAt: Date.now(),
       },
       sha256hash: "h".repeat(64),
+      createdBy: "users:publisher",
     };
     const skill = {
       _id: "skills:1",
       slug: "spam-skill",
       ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:org",
       latestVersionId: "skillVersions:1",
       moderationFlags: undefined,
       moderationReason: undefined,
@@ -1579,16 +1580,11 @@ describe("skills anti-spam guards", () => {
         moderationFlags: ["blocked.malware"],
       }),
     );
-    expect(runAfter).toHaveBeenCalledWith(
-      0,
-      internal.users.autobanMalwareAuthorInternal,
-      expect.objectContaining({
-        ownerUserId: "users:owner",
-        slug: "spam-skill",
-        sha256hash: "h".repeat(64),
-        trigger: "malicious.llm_malicious",
-      }),
-    );
+    expect(
+      runAfter.mock.calls.map(([, ref]) =>
+        getFunctionName(ref as Parameters<typeof getFunctionName>[0]),
+      ),
+    ).not.toContain("users:autobanMalwareAuthorInternal");
   });
 
   it("persists ClawScan malware lock when malicious lands on an existing moderation hold", async () => {
@@ -1668,16 +1664,11 @@ describe("skills anti-spam guards", () => {
         moderationReasonCodes: ["malicious.llm_malicious"],
       }),
     );
-    expect(runAfter).toHaveBeenCalledWith(
-      0,
-      internal.users.autobanMalwareAuthorInternal,
-      expect.objectContaining({
-        ownerUserId: "users:owner",
-        slug: "quality-held-spam",
-        sha256hash: "h".repeat(64),
-        trigger: "malicious.llm_malicious",
-      }),
-    );
+    expect(
+      runAfter.mock.calls.map(([, ref]) =>
+        getFunctionName(ref as Parameters<typeof getFunctionName>[0]),
+      ),
+    ).not.toContain("users:autobanMalwareAuthorInternal");
   });
 
   it("keeps new publishes hidden while the uploader is under moderation", async () => {

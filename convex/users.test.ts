@@ -23,6 +23,7 @@ const {
   list,
   searchInternal,
   banUserInternal,
+  autobanMalwareAuthorInternal,
   unbanUserForBanAppealServiceInternal,
   reclassifyBanInternal,
   me,
@@ -2130,6 +2131,41 @@ describe("users.searchInternal", () => {
     expect(collect).not.toHaveBeenCalled();
     expect(result.total).toBe(200);
     expect(result.items).toHaveLength(200);
+  });
+});
+
+describe("queued scanner account sanctions", () => {
+  afterEach(() => {
+    vi.mocked(insertStatEvent).mockReset();
+    vi.restoreAllMocks();
+  });
+
+  it("leaves accounts, tokens, comments and owned content untouched until human review", async () => {
+    const { ctx, get, patch, insert, runMutation } = makeBanCtx();
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") return { _id: id, role: "user" };
+      if (id === "souls:1") return { _id: id, stats: { comments: 3 } };
+      return null;
+    });
+    runMutation.mockResolvedValue({ hiddenCount: 2, deletedCount: 1, scheduled: false });
+    const handler = (
+      autobanMalwareAuthorInternal as unknown as WrappedHandler<
+        { ownerUserId: string; slug: string; sha256hash: string; trigger: string },
+        unknown
+      >
+    )._handler;
+
+    const result = await handler(ctx, {
+      ownerUserId: "users:target",
+      slug: "org-owned-artifact",
+      sha256hash: "a".repeat(64),
+      trigger: "malicious.llm_malicious",
+    });
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, reason: "human_review_required" });
   });
 });
 
