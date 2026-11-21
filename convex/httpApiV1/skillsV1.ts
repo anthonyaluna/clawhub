@@ -55,6 +55,7 @@ import {
   requireAdminOrResponse,
   requireApiTokenUserOrResponse,
   resolveTagsBatch,
+  safeStoredTextFileResponse,
   safeTextFileResponse,
   softDeleteErrorToResponse,
   text,
@@ -2114,13 +2115,10 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
 
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File missing in storage", 410, rate.headers);
-    const textContent = await blob.text();
-    return safeTextFileResponse({
-      textContent,
+    return safeStoredTextFileResponse({
+      blob,
       path: file.path,
       contentType: file.contentType ?? undefined,
-      sha256: file.sha256,
-      size: file.size,
       headers: rate.headers,
     });
   }
