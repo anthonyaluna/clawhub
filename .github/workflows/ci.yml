@@ -34,7 +34,8 @@ jobs:
 
   unit:
     name: unit
-    runs-on: ubuntu-latest
+    # The scanner fixture uses Ubuntu 24.04's scoped Bubblewrap/AppArmor profile.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
