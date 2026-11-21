@@ -387,6 +387,13 @@ Support:
 Transfer acceptance rule:
 
 - actor must have `owner` or `admin` on target publisher
+- During the dual-field migration, `ownerUserId` is not an authorization
+  bypass when `ownerPublisherId` is present. Pending source requests must be
+  revalidated against the live publisher membership at both request and
+  acceptance time; loss of the required source authority cancels the transfer.
+- A missing `ownerPublisherId` may use the legacy personal `ownerUserId`
+  fallback, while linked personal publishers must still match their linked
+  user.
 
 Audit should record:
 
