@@ -261,6 +261,11 @@ Role semantics:
 - `admin`: manage content and members except destructive publisher-level actions
 - `publisher`: publish new versions, update metadata, no membership changes
 
+Changing an existing owner's role is an owner-only action, just like removing
+an owner. Demotion and removal must each leave at least one owner membership,
+checked in the same mutation as the change. Admins may still manage non-owner
+members, and setting an owner's role to `owner` does not remove owner authority.
+
 Moderators/admins keep global override powers as they do today.
 
 Membership management is only valid for `kind: "org"` publishers. Personal
