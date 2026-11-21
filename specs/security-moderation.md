@@ -108,10 +108,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   compatibility, but the first-class CLI and docs surface is deprecated.
   Publisher recovery for false positives should use reports or out-of-band
   support, while account bans require out-of-band support.
-- Any ClawScan path that determines a skill is malicious must hide the skill and
-  schedule the same account-level autoban/token-revocation workflow. Static
-  scan findings are ClawScan input context only and must not schedule autobans
-  or set public/install-blocking trust by themselves.
+- Any ClawScan path that determines a skill is malicious must quarantine the
+  artifact by hiding the skill and preserving its malware block. Account bans
+  and account-wide token revocation for scanner verdicts require human review
+  through the existing authorized staff ban flow. The legacy malware-autoban
+  entrypoint must remain harmless for jobs queued before this policy change.
+  Static scan findings are ClawScan input context only and must not set
+  public/install-blocking trust by themselves.
 - Pending skill ownership transfers must not be accepted when the requesting
   owner is deleted/deactivated or when the skill is malicious, hidden, or
   removed. The accept path is the final shared gate before ownership changes,
@@ -153,6 +156,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Package publish upload boundary
 
+- CLI multipart transports must send scalar values and display filenames as
+  literal multipart data, never as curl form directives. Only process-created
+  staging files containing the intended request bytes may be read by curl;
+  artifact display paths must not select local staging paths. Preserve repeated
+  fields, file bytes, MIME types, and nested display paths in both runtimes.
 - Package publish is multipart-only. `POST /api/v1/packages` must reject JSON
   request bodies, including bodies that reference pre-existing storage IDs.
 - Public HTTP package publish payloads must not accept caller-supplied `files`

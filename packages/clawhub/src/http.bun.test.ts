@@ -1,7 +1,8 @@
 /* @vitest-environment node */
 
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { createHttpClient } from "./http.js";
 
@@ -54,6 +55,30 @@ function createBunClient(options?: {
     setTimeoutImpl,
     clearTimeoutImpl,
   };
+}
+
+async function readMultipartUpload(stubs: ReturnType<typeof createBunClient>, attempt = 0) {
+  const [command, args] = stubs.spawnImpl.mock.calls[attempt] as [string, string[]];
+  expect(command).toBe("curl");
+  // Assert the security boundary before decoding the actual uploaded bytes.
+  expect(args).not.toContain("-F");
+  expect(args).not.toContain("--form");
+  expect(args).not.toContain("--form-string");
+  const bodyIndex = args.indexOf("--data-binary");
+  expect(bodyIndex).toBeGreaterThanOrEqual(0);
+  const writes = stubs.writeFileImpl.mock.calls as unknown as [string, Uint8Array][];
+  const [bodyPath, bytes] = writes[attempt];
+  expect(args[bodyIndex + 1]).toBe(`@${bodyPath}`);
+  const headers = new Headers();
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== "-H") continue;
+    const header = args[index + 1];
+    const colon = header.indexOf(":");
+    headers.append(header.slice(0, colon), header.slice(colon + 1).trim());
+  }
+  expect(headers.get("Content-Type")).toMatch(/^multipart\/form-data; boundary=/);
+  const form = await new Response(new Uint8Array(bytes), { headers }).formData();
+  return { form, args, bodyPath, headers };
 }
 
 describe("bun http client", () => {
@@ -183,34 +208,216 @@ describe("bun http client", () => {
   });
 
   it("posts multipart form data via curl and cleans up temp files", async () => {
-    const tempDir = join(tmpdir(), "clawhub-upload-abc");
-    const { client, spawnImpl, mkdirImpl, writeFileImpl, rmImpl } = createBunClient({
+    const stubs = createBunClient({
       spawnImpl: () => ({ status: 0, stdout: '{"ok":true}\n200', stderr: "" }),
-      mkdtempValue: tempDir,
+      mkdtempValue: "/tmp/clawhub-upload-abc",
     });
 
     const form = new FormData();
     form.append("name", "demo");
     form.append("file", new Blob(["abc"], { type: "text/plain" }), "dist/demo.txt");
 
-    const result = await client.apiRequestForm<{ ok: boolean }>("https://registry.example", {
+    const result = await stubs.client.apiRequestForm<{ ok: boolean }>("https://registry.example", {
       method: "POST",
       path: "/upload",
       form,
     });
 
     expect(result).toEqual({ ok: true });
-    expect(mkdirImpl).toHaveBeenCalledWith(join(tempDir, "dist"), { recursive: true });
-    expect(writeFileImpl).toHaveBeenCalled();
-    expect(rmImpl).toHaveBeenCalledWith(tempDir, {
+    const upload = await readMultipartUpload(stubs);
+    expect(upload.form.get("name")).toBe("demo");
+    const file = upload.form.get("file") as File;
+    expect(file.name).toBe("dist/demo.txt");
+    expect(file.type).toBe("text/plain");
+    expect(await file.text()).toBe("abc");
+    expect(stubs.mkdirImpl).not.toHaveBeenCalled();
+    expect(stubs.writeFileImpl).toHaveBeenCalledTimes(1);
+    expect(stubs.rmImpl).toHaveBeenCalledWith("/tmp/clawhub-upload-abc", {
       recursive: true,
       force: true,
     });
-    const [, args] = spawnImpl.mock.calls[0] as [string, string[]];
-    expect(args).toContain("-F");
-    expect(args.some((arg) => arg.includes("name=demo"))).toBe(true);
-    expect(args.some((arg) => arg.includes(`file=@${join(tempDir, "dist", "demo.txt")}`))).toBe(
-      true,
+  });
+
+  it.each([
+    "@synthetic-canary.txt",
+    "<synthetic-canary.txt",
+    "value;headers=@synthetic-canary.txt",
+    "value;type=text/plain;filename=extra.txt",
+    " leading and trailing spaces ",
+  ])("keeps scalar multipart data literal: %s", async (value) => {
+    const stubs = createBunClient({
+      spawnImpl: () => ({ status: 0, stdout: '{"ok":true}\n200', stderr: "" }),
+    });
+    const form = new FormData();
+    form.append("clawpack", value);
+    form.append("clawpackUploadTicket", value);
+    form.append("payload", '{"name":"ordinary-control"}');
+
+    await stubs.client.apiRequestForm("https://registry.example", {
+      method: "POST",
+      path: "/upload",
+      form,
+    });
+
+    const upload = await readMultipartUpload(stubs);
+    expect(upload.form.get("clawpack")).toBe(value);
+    expect(upload.form.get("clawpackUploadTicket")).toBe(value);
+    expect(upload.form.get("payload")).toBe('{"name":"ordinary-control"}');
+    expect(stubs.writeFileImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    "dist/demo.txt",
+    "comma,name.txt",
+    "semi;headers=@synthetic-canary.txt",
+    'quote";filename=extra.txt',
+    "back\\slash.txt",
+    "line\r\nbreak.txt",
+    "../outside.txt",
+    "C:\\outside.txt",
+  ])(
+    "does not let display filenames control local reads or staging paths: %s",
+    async (filename) => {
+      const tempDir = join("synthetic-temp", "clawhub-upload-abc");
+      const stubs = createBunClient({
+        spawnImpl: () => ({ status: 0, stdout: '{"ok":true}\n200', stderr: "" }),
+        mkdtempValue: tempDir,
+      });
+      const form = new FormData();
+      form.append(
+        "files",
+        new Blob([new Uint8Array([0, 10, 255])], { type: "application/octet-stream" }),
+        filename,
+      );
+
+      await stubs.client.apiRequestForm("https://registry.example", {
+        method: "POST",
+        path: "/upload",
+        form,
+      });
+
+      const upload = await readMultipartUpload(stubs);
+      expect(dirname(upload.bodyPath)).toBe(tempDir);
+      expect(upload.args.join("\n")).not.toContain(filename);
+      const file = upload.form.get("files") as File;
+      expect(file.name).toBe(filename);
+      expect(file.type).toBe("application/octet-stream");
+      expect(new Uint8Array(await file.arrayBuffer())).toEqual(new Uint8Array([0, 10, 255]));
+      expect(stubs.writeFileImpl).toHaveBeenCalledTimes(1);
+      expect(stubs.mkdirImpl).not.toHaveBeenCalled();
+      expect(stubs.rmImpl).toHaveBeenCalledWith(tempDir, { recursive: true, force: true });
+    },
+  );
+
+  it("preserves repeated scalars and distinct bytes for duplicate display filenames", async () => {
+    const stubs = createBunClient({
+      spawnImpl: () => ({ status: 0, stdout: '{"ok":true}\n200', stderr: "" }),
+      mkdtempValue: 'C:\\synthetic temp,semicolon;quote"\\upload',
+    });
+    const form = new FormData();
+    form.append("tag", "first");
+    form.append("tag", "second");
+    form.append("files", new Blob(["first bytes"], { type: "text/plain" }), "dist/same.txt");
+    form.append("files", new Blob(["second bytes"], { type: "text/plain" }), "dist/same.txt");
+
+    await stubs.client.apiRequestForm("https://registry.example", {
+      method: "POST",
+      path: "/upload",
+      token: "synthetic-token",
+      form,
+    });
+
+    const upload = await readMultipartUpload(stubs);
+    expect(upload.form.getAll("tag")).toEqual(["first", "second"]);
+    const files = upload.form.getAll("files") as File[];
+    expect(files.map((file) => file.name)).toEqual(["dist/same.txt", "dist/same.txt"]);
+    expect(await Promise.all(files.map((file) => file.text()))).toEqual([
+      "first bytes",
+      "second bytes",
+    ]);
+    expect(files.map((file) => file.type)).toEqual(["text/plain", "text/plain"]);
+    expect(upload.headers.get("Authorization")).toBe("Bearer synthetic-token");
+    expect(upload.args).toContain("120");
+    expect(stubs.writeFileImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("encodes a real Bun request that the independent Node multipart parser can read", async () => {
+    const fixture = fileURLToPath(
+      new URL("../test-artifact/fixtures/multipart-runtime.mjs", import.meta.url),
     );
+    const result = spawnSync("bun", [fixture], { encoding: "utf8", timeout: 15_000 });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    const packet = JSON.parse(result.stdout);
+    expect(packet.bun).toBeTruthy();
+    const headers = new Headers(packet.headers);
+    expect(headers.get("Authorization")).toBe("Bearer synthetic-token");
+    const form = await new Response(Buffer.from(packet.bytes, "base64"), { headers }).formData();
+    expect(form.getAll("tag")).toEqual([
+      "@synthetic-canary.txt",
+      "<synthetic-canary.txt",
+      "value;headers=@synthetic-canary.txt",
+    ]);
+    const files = form.getAll("files") as File[];
+    expect(files.map((file) => file.name)).toEqual([
+      "dist/demo.txt",
+      "comma,name.txt",
+      "semi;headers=@synthetic-canary.txt",
+      'quote";filename=extra.txt',
+      "back\\slash.txt",
+      "line\r\nbreak.txt",
+      "../outside.txt",
+      "C:\\outside.txt",
+      "same.txt",
+      "same.txt",
+    ]);
+    for (const [index, file] of files.entries()) {
+      expect(new Uint8Array(await file.arrayBuffer())).toEqual(new Uint8Array([index, 0, 255]));
+      expect(file.type).toBe("application/octet-stream");
+    }
+  });
+
+  it("retries form uploads with literal data and cleans each attempt", async () => {
+    const stubs = createBunClient({
+      spawnImpl: vi
+        .fn()
+        .mockReturnValueOnce({ status: 0, stdout: "rate limited\n429", stderr: "" })
+        .mockReturnValueOnce({ status: 0, stdout: '{"ok":true}\n200', stderr: "" }),
+    });
+    const form = new FormData();
+    form.append("payload", "<synthetic-canary.txt");
+
+    await expect(
+      stubs.client.apiRequestForm("https://registry.example", {
+        method: "POST",
+        path: "/upload",
+        form,
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect((await readMultipartUpload(stubs, 0)).form.get("payload")).toBe("<synthetic-canary.txt");
+    expect((await readMultipartUpload(stubs, 1)).form.get("payload")).toBe("<synthetic-canary.txt");
+    expect(stubs.rmImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { status: 1, stdout: "", stderr: "synthetic curl failure", error: "synthetic curl failure" },
+    { status: 0, stdout: "denied\n403", stderr: "", error: "denied" },
+    { status: 0, stdout: "invalid json\n200", stderr: "", error: "JSON" },
+  ])("cleans form staging after failure: $error", async (result) => {
+    const stubs = createBunClient({ spawnImpl: () => result });
+    const form = new FormData();
+    form.append("payload", "ordinary data");
+
+    await expect(
+      stubs.client.apiRequestForm("https://registry.example", {
+        method: "POST",
+        path: "/upload",
+        form,
+        retryCount: 0,
+      }),
+    ).rejects.toThrow(result.error);
+    await readMultipartUpload(stubs);
+    expect(stubs.rmImpl).toHaveBeenCalledTimes(1);
   });
 });
