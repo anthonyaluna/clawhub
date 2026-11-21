@@ -32,7 +32,6 @@ async function assertCanRequestSkillTransfer(
   actor: Doc<"users">,
   skill: Doc<"skills">,
 ) {
-  if (skill.ownerUserId === actor._id) return;
   await assertCanManageOwnedResource(ctx, {
     actor,
     ownerUserId: skill.ownerUserId,
@@ -198,12 +197,10 @@ export const acceptTransferInternal = internalMutation({
     if (!requester || requester.deletedAt || requester.deactivatedAt) {
       return await cancelTransfer("Transfer is no longer valid");
     }
-    if (skill.ownerUserId !== transfer.fromUserId) {
-      try {
-        await assertCanRequestSkillTransfer(ctx, requester, skill);
-      } catch {
-        return await cancelTransfer("Transfer is no longer valid");
-      }
+    try {
+      await assertCanRequestSkillTransfer(ctx, requester, skill);
+    } catch {
+      return await cancelTransfer("Transfer is no longer valid");
     }
     const newPublisher = await ensurePersonalPublisherForUser(ctx, newOwner, {
       actorUserId: args.actorUserId,

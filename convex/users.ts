@@ -2400,8 +2400,8 @@ export const ensurePublisherHandleInternal = internalMutation({
 });
 
 /**
- * Auto-ban a user whose skill was flagged malicious by a scanner.
- * Skips moderators/admins. No actor required — this is a system-level action.
+ * Retained for already queued legacy malware jobs. Scanner verdicts quarantine
+ * artifacts; account sanctions require human review through the staff ban flow.
  */
 export const autobanMalwareAuthorInternal = internalMutation({
   args: {
@@ -2410,109 +2410,8 @@ export const autobanMalwareAuthorInternal = internalMutation({
     slug: v.string(),
     trigger: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const target = await ctx.db.get(args.ownerUserId);
-    if (!target) return { ok: false, reason: "user_not_found" };
-    if (target.deletedAt || target.deactivatedAt) return { ok: true, alreadyBanned: true };
-
-    // Never auto-ban moderators or admins
-    if (target.role === "admin" || target.role === "moderator") {
-      console.log(`[autoban] Skipping ${target.handle ?? args.ownerUserId}: role=${target.role}`);
-      return { ok: false, reason: "protected_role" };
-    }
-
-    const now = Date.now();
-
-    const banSkillsResult = (await ctx.runMutation(
-      internal.skills.applyBanToOwnedSkillsBatchInternal,
-      {
-        ownerUserId: args.ownerUserId,
-        bannedAt: now,
-        cursor: undefined,
-      },
-    )) as { hiddenCount?: number; scheduled?: boolean };
-    const hiddenCount = banSkillsResult.hiddenCount ?? 0;
-    const scheduledSkills = banSkillsResult.scheduled ?? false;
-
-    // Revoke all API tokens
-    const tokens = await ctx.db
-      .query("apiTokens")
-      .withIndex("by_user", (q) => q.eq("userId", args.ownerUserId))
-      .collect();
-    for (const token of tokens) {
-      if (!token.revokedAt) {
-        await ctx.db.patch(token._id, { revokedAt: now });
-      }
-    }
-
-    const deletedComments = await softDeleteUserCommentsForBan(ctx, {
-      userId: args.ownerUserId,
-      deletedBy: args.ownerUserId,
-      deletedAt: now,
-    });
-
-    // Ban the user
-    await ctx.db.patch(args.ownerUserId, {
-      deletedAt: now,
-      role: "user",
-      updatedAt: now,
-      banReason: "malware auto-ban",
-    });
-
-    const banPackagesResult = ((await ctx.runMutation(
-      internal.packages.applyBanToOwnedPackagesBatchInternal,
-      {
-        ownerUserId: args.ownerUserId,
-        bannedAt: now,
-        deletedBy: args.ownerUserId,
-        deletedByRole: "user",
-        cursor: undefined,
-      },
-    )) ?? {}) as { deletedCount?: number; revokedTokenCount?: number; scheduled?: boolean };
-    const deletedPackageCount = banPackagesResult.deletedCount ?? 0;
-    const revokedPackagePublishTokens = banPackagesResult.revokedTokenCount ?? 0;
-    const scheduledPackages = banPackagesResult.scheduled ?? false;
-
-    await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, {
-      userId: args.ownerUserId,
-    });
-
-    const metadata: Record<string, unknown> = {
-      trigger: args.trigger?.trim() || "scanner.malicious",
-      slug: args.slug,
-      hiddenSkills: hiddenCount,
-      deletedPackages: deletedPackageCount,
-      revokedPackagePublishTokens,
-      scheduledPackages,
-      deletedSkillComments: deletedComments.skillComments,
-      deletedSoulComments: deletedComments.soulComments,
-    };
-    if (args.sha256hash?.trim()) {
-      metadata.sha256hash = args.sha256hash.trim();
-    }
-
-    // Audit log -- use the target as actor since there's no human actor
-    await ctx.db.insert("auditLogs", {
-      actorUserId: args.ownerUserId,
-      action: "user.autoban.malware",
-      targetType: "user",
-      targetId: args.ownerUserId,
-      metadata,
-      createdAt: now,
-    });
-
-    console.warn(
-      `[autoban] Banned ${target.handle ?? args.ownerUserId} — malicious skill: ${args.slug}`,
-    );
-
-    return {
-      ok: true,
-      alreadyBanned: false,
-      deletedSkills: hiddenCount,
-      deletedComments,
-      scheduledSkills,
-    };
-  },
+  returns: v.object({ ok: v.literal(false), reason: v.literal("human_review_required") }),
+  handler: () => ({ ok: false as const, reason: "human_review_required" as const }),
 });
 
 export const placeUserUnderModerationInternal = internalMutation({

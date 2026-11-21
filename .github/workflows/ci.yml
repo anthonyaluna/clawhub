@@ -98,7 +98,8 @@ jobs:
 
   playwright-smoke:
     name: playwright-smoke
-    runs-on: ubuntu-latest
+    # Playwright 1.60.0 supports Ubuntu 24.04, not the current ubuntu-latest image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     steps:
@@ -122,7 +123,7 @@ jobs:
 
   playwright-local-auth:
     name: playwright-local-auth
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
