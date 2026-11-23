@@ -30,6 +30,8 @@ import {
 type PackageTrustedPublisherSetOptions = {
   repository?: string;
   workflowFilename?: string;
+  ref?: string;
+  reusableWorkflowRef?: string;
   environment?: string;
   json?: boolean;
 };
@@ -123,9 +125,12 @@ export async function cmdSetPackageTrustedPublisher(
   const trimmed = normalizePackageNameOrFail(packageName);
   const repository = options.repository?.trim();
   const workflowFilename = options.workflowFilename?.trim();
+  const ref = options.ref?.trim();
+  const reusableWorkflowRef = options.reusableWorkflowRef?.trim() || undefined;
   const environment = options.environment?.trim() || undefined;
   if (!repository) fail("--repository required");
   if (!workflowFilename) fail("--workflow-filename required");
+  if (!ref) fail("--ref required");
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
@@ -140,6 +145,8 @@ export async function cmdSetPackageTrustedPublisher(
         body: {
           repository,
           workflowFilename,
+          ref,
+          ...(reusableWorkflowRef ? { reusableWorkflowRef } : {}),
           ...(environment ? { environment } : {}),
         },
       },
@@ -714,5 +721,8 @@ function printTrustedPublisher(config: PackageTrustedPublisher) {
   console.log(`Provider: ${config.provider}`);
   console.log(`Repository: ${config.repository}`);
   console.log(`Workflow: ${config.workflowFilename}`);
+  console.log(`Ref: ${config.ref ?? "<unset; publishing disabled>"}`);
+  if (config.reusableWorkflowRef)
+    console.log(`Reusable workflow ref: ${config.reusableWorkflowRef}`);
   if (config.environment) console.log(`Environment: ${config.environment}`);
 }

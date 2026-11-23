@@ -44,7 +44,12 @@ import {
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
-import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
+import {
+  assertTrustedGitHubActionsWorkflowRefs,
+  normalizeGitHubActionsRef,
+  normalizeGitHubRepository,
+  normalizeGitHubWorkflowSha,
+} from "./lib/githubActionsOidc";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import {
   assertPackageVersion,
@@ -2869,6 +2874,8 @@ export const setTrustedPublisherForUserInternal = internalMutation({
     repositoryOwner: v.string(),
     repositoryOwnerId: v.string(),
     workflowFilename: v.string(),
+    ref: v.string(),
+    reusableWorkflowRef: v.optional(v.string()),
     environment: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -2882,6 +2889,15 @@ export const setTrustedPublisherForUserInternal = internalMutation({
     await requireTrustedPublisherEditor(ctx, pkg, args.actorUserId);
 
     const workflowFilename = normalizeWorkflowFilenameOrThrow(args.workflowFilename);
+    const ref = normalizeGitHubActionsRef(args.ref);
+    if (!ref)
+      throw new ConvexError("An exact refs/heads/... or refs/tags/... workflow ref is required");
+    const rawReusableRef = args.reusableWorkflowRef?.trim();
+    const reusableWorkflowRef = rawReusableRef
+      ? normalizeGitHubWorkflowSha(rawReusableRef)
+      : undefined;
+    if (rawReusableRef && !reusableWorkflowRef)
+      throw new ConvexError("Reusable workflow ref must be a full commit SHA");
     const environment = args.environment?.trim() || undefined;
 
     const existing = await getPackageTrustedPublisherByPackageId(ctx, pkg._id);
@@ -2893,6 +2909,8 @@ export const setTrustedPublisherForUserInternal = internalMutation({
       repositoryOwner: args.repositoryOwner,
       repositoryOwnerId: args.repositoryOwnerId,
       workflowFilename,
+      ref,
+      reusableWorkflowRef: reusableWorkflowRef ?? undefined,
       environment,
       updatedByUserId: args.actorUserId,
       updatedAt: now,
@@ -2920,6 +2938,8 @@ export const setTrustedPublisherForUserInternal = internalMutation({
         repositoryOwner: args.repositoryOwner,
         repositoryOwnerId: args.repositoryOwnerId,
         workflowFilename,
+        ref,
+        ...(reusableWorkflowRef ? { reusableWorkflowRef } : {}),
         ...(environment ? { environment } : {}),
       },
       createdAt: now,
@@ -2955,6 +2975,8 @@ export const deleteTrustedPublisherForUserInternal = internalMutation({
         repositoryOwner: existing.repositoryOwner,
         repositoryOwnerId: existing.repositoryOwnerId,
         workflowFilename: existing.workflowFilename,
+        ref: existing.ref,
+        reusableWorkflowRef: existing.reusableWorkflowRef,
         environment: existing.environment,
       },
       createdAt: Date.now(),
@@ -5303,8 +5325,20 @@ function doesTrustedPublisherMatchPublishToken(
   trustedPublisher: PackageTrustedPublisherDoc | null,
   publishToken: Doc<"packagePublishTokens">,
 ) {
-  return Boolean(
-    trustedPublisher &&
+  if (!trustedPublisher || !publishToken.workflowRef) return false;
+  try {
+    assertTrustedGitHubActionsWorkflowRefs(
+      {
+        workflowRef: publishToken.workflowRef,
+        ref: publishToken.ref,
+        jobWorkflowRef: publishToken.jobWorkflowRef,
+      },
+      trustedPublisher,
+    );
+  } catch {
+    return false;
+  }
+  return (
     trustedPublisher.packageId === publishToken.packageId &&
     trustedPublisher.provider === publishToken.provider &&
     trustedPublisher.repository === publishToken.repository &&
@@ -5312,7 +5346,7 @@ function doesTrustedPublisherMatchPublishToken(
     trustedPublisher.repositoryOwner === publishToken.repositoryOwner &&
     trustedPublisher.repositoryOwnerId === publishToken.repositoryOwnerId &&
     trustedPublisher.workflowFilename === publishToken.workflowFilename &&
-    trustedPublisher.environment === publishToken.environment,
+    trustedPublisher.environment === publishToken.environment
   );
 }
 
@@ -5607,6 +5641,7 @@ async function publishPackageImpl(
     ownerUserId,
     ownerPublisherId,
     publishActor,
+    ...(auth.kind === "github-actions" ? { publishTokenId: auth.publishToken._id } : {}),
     name,
     displayName,
     family,
@@ -6169,6 +6204,7 @@ export const insertReleaseInternal = internalMutation({
     actorUserId: v.id("users"),
     ownerUserId: v.id("users"),
     ownerPublisherId: v.optional(v.id("publishers")),
+    publishTokenId: v.optional(v.id("packagePublishTokens")),
     publishActor: v.optional(
       v.union(
         v.object({
@@ -6282,6 +6318,28 @@ export const insertReleaseInternal = internalMutation({
     const nextCapabilities = withArtifactCapabilityTags(args.capabilities, args);
     const nextCapabilityTags = mergeArtifactCapabilityTags(args.capabilities?.capabilityTags, args);
     const existing = await getPackageByNormalizedName(ctx, normalizedName);
+    if (args.publishActor?.kind === "github-actions" || args.publishTokenId) {
+      if (!args.publishTokenId || args.publishActor?.kind !== "github-actions") {
+        throw new ConvexError("Trusted publish requires its authenticated token");
+      }
+      const publishToken = await ctx.db.get(args.publishTokenId);
+      const trustedPublisher = existing
+        ? await getPackageTrustedPublisherByPackageId(ctx, existing._id)
+        : null;
+      if (
+        !publishToken ||
+        publishToken.revokedAt ||
+        publishToken.expiresAt <= now ||
+        !existing ||
+        publishToken.packageId !== existing._id ||
+        publishToken.version !== args.version ||
+        !doesTrustedPublisherMatchPublishToken(trustedPublisher, publishToken)
+      ) {
+        throw new ConvexError(
+          "Trusted publish token no longer matches the current package trusted publisher",
+        );
+      }
+    }
     const existingIsReservation = isReservedPackagePlaceholder(existing);
     const nextNameLabel = typeof args.name === "string" ? args.name : "<unknown>";
     if (existing?.softDeletedAt) {

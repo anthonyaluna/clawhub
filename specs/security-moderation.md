@@ -181,6 +181,35 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   artifact hashes and npm metadata, and derives package file metadata from the
   tarball contents.
 
+## GitHub Actions trusted publishing for packages
+
+- A package's trusted-publisher configuration approves one caller workflow
+  on one exact branch or tag ref (`refs/heads/...` or `refs/tags/...`).
+  At token mint, verify the signed GitHub OIDC claims against the configured
+  repository and owner names and IDs, workflow filename, and environment
+  when configured. Both `ref` and the ref in `workflow_ref` must equal the
+  approved ref. This binds a workflow filename shared across branches to
+  the branch or tag the package owner approved. Minting requires
+  `workflow_dispatch` on a GitHub-hosted runner.
+- A direct workflow omits `job_workflow_ref` and the reusable-workflow pin.
+  For a reusable workflow, `job_workflow_ref` must identify
+  `openclaw/clawhub/.github/workflows/package-publish.yml` at the approved
+  full 40-character commit SHA. The caller ref and the reusable workflow
+  revision are independent approvals. Moving a branch or tag in the reusable
+  repository must never change which implementation may publish.
+- Bind the short-lived publish token to its package, version, and verified
+  workflow identity, including the caller ref and any reusable workflow ref.
+  Recheck the token against the current configuration at publish time and
+  again inside the mutation that writes the release. A revoked or expired
+  token, a deleted configuration, or a changed caller ref or reusable pin
+  must prevent that write, even when the change occurs after validation.
+- Legacy configurations without an approved caller ref and tokens without
+  the caller workflow provenance fail closed. An authorized operator supplies
+  any missing approval. The workflow must mint a fresh token under the
+  explicit configuration.
+  Manual publishes retain their existing user authorization and override
+  rules.
+
 ## Skill moderation pipeline
 
 - New skill publishes now persist a deterministic static scan result on the version.

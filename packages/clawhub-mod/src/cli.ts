@@ -543,6 +543,11 @@ function registerPluginGovernanceCommands(command: Command) {
     .argument("<name>", "Plugin package name")
     .requiredOption("--repository <repo>", "GitHub repo (owner/repo or URL)")
     .requiredOption("--workflow-filename <file>", "Workflow filename, for example publish.yml")
+    .requiredOption("--ref <ref>", "Approved exact GitHub ref, for example refs/heads/main")
+    .option(
+      "--reusable-workflow-ref <sha>",
+      "Approved 40-character commit SHA for the official reusable workflow",
+    )
     .option("--environment <name>", "Optional GitHub environment name to pin")
     .option("--json", "Output JSON")
     .action(async (name, options) => {

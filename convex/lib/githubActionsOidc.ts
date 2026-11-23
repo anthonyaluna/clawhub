@@ -18,6 +18,8 @@ export type TrustedGitHubActionsPublisher = {
   repositoryOwner: string;
   repositoryOwnerId: string;
   workflowFilename: string;
+  ref?: string;
+  reusableWorkflowRef?: string;
   environment?: string;
 };
 
@@ -57,6 +59,7 @@ type GitHubRepositoryIdentity = {
 type ParsedWorkflowRef = {
   repository: string;
   workflowFilename: string;
+  ref: string;
 };
 
 const GITHUB_ACTIONS_ISSUER = "https://token.actions.githubusercontent.com";
@@ -161,17 +164,7 @@ export async function verifyGitHubActionsTrustedPublishJwt(
       `GitHub OIDC workflow mismatch: expected ${trustedPublisher.workflowFilename}, got ${workflow.workflowFilename}`,
     );
   }
-  if (jobWorkflowRef) {
-    const reusableWorkflow = parseWorkflowRef(jobWorkflowRef);
-    const usesOfficialReusableWorkflow =
-      reusableWorkflow.repository === OFFICIAL_REUSABLE_WORKFLOW_REPOSITORY &&
-      reusableWorkflow.workflowFilename === OFFICIAL_REUSABLE_WORKFLOW_FILENAME;
-    if (!usesOfficialReusableWorkflow) {
-      throw new Error(
-        "Only the official ClawHub reusable workflow is supported for trusted publishing",
-      );
-    }
-  }
+  assertTrustedGitHubActionsWorkflowRefs({ workflowRef, ref, jobWorkflowRef }, trustedPublisher);
   if (runnerEnvironment !== "github-hosted") {
     throw new Error(
       `Only GitHub-hosted runners may mint trusted publish tokens, got ${runnerEnvironment}`,
@@ -270,9 +263,74 @@ export function extractWorkflowFilenameFromWorkflowRef(
   return parseWorkflowRef(workflowRef, expectedRepository).workflowFilename;
 }
 
+export function normalizeGitHubActionsRef(value: string | undefined) {
+  const ref = value?.trim();
+  if (!ref || !/^refs\/(?:heads|tags)\/.+$/.test(ref)) return null;
+  for (const character of ref) {
+    const code = character.charCodeAt(0);
+    if (code <= 0x20 || code === 0x7f) return null;
+  }
+  if (["\\", "~", "^", ":", "?", "*", "[", "..", "@{"].some((part) => ref.includes(part)))
+    return null;
+  if (
+    ref.endsWith(".") ||
+    ref.split("/").some((part) => !part || part.startsWith(".") || part.endsWith(".lock"))
+  )
+    return null;
+  return ref;
+}
+
+export function normalizeGitHubWorkflowSha(value: string | undefined) {
+  const ref = value?.trim();
+  return ref && /^[a-f0-9]{40}$/i.test(ref) ? ref.toLowerCase() : null;
+}
+
+export function assertTrustedGitHubActionsWorkflowRefs(
+  identity: Pick<VerifiedGitHubActionsIdentity, "workflowRef" | "ref" | "jobWorkflowRef">,
+  trustedPublisher: Pick<
+    TrustedGitHubActionsPublisher,
+    "repository" | "workflowFilename" | "ref" | "reusableWorkflowRef"
+  >,
+) {
+  const approvedRef = normalizeGitHubActionsRef(trustedPublisher.ref);
+  if (!approvedRef) throw new Error("Trusted publisher requires an explicit approved workflow ref");
+  const workflow = parseWorkflowRef(identity.workflowRef, trustedPublisher.repository);
+  if (
+    workflow.workflowFilename !== trustedPublisher.workflowFilename ||
+    workflow.ref !== approvedRef ||
+    identity.ref !== approvedRef
+  ) {
+    throw new Error("GitHub OIDC workflow ref does not match the approved ref");
+  }
+
+  const approvedReusableRef = normalizeGitHubWorkflowSha(trustedPublisher.reusableWorkflowRef);
+  if (trustedPublisher.reusableWorkflowRef && !approvedReusableRef) {
+    throw new Error("Trusted publisher reusable workflow ref must be a full commit SHA");
+  }
+  if (identity.jobWorkflowRef) {
+    const reusable = parseWorkflowRef(identity.jobWorkflowRef);
+    if (
+      reusable.repository !== OFFICIAL_REUSABLE_WORKFLOW_REPOSITORY ||
+      reusable.workflowFilename !== OFFICIAL_REUSABLE_WORKFLOW_FILENAME
+    ) {
+      throw new Error(
+        "Only the official ClawHub reusable workflow is supported for trusted publishing",
+      );
+    }
+    const actualRef = normalizeGitHubWorkflowSha(reusable.ref);
+    if (!approvedReusableRef || !actualRef || actualRef !== approvedReusableRef) {
+      throw new Error(
+        "GitHub OIDC reusable workflow ref does not match the approved immutable ref",
+      );
+    }
+  } else if (approvedReusableRef) {
+    throw new Error("GitHub OIDC token is missing the approved reusable workflow ref");
+  }
+}
+
 function parseWorkflowRef(workflowRef: string, expectedRepository?: string): ParsedWorkflowRef {
-  const match = /^([^/]+\/[^/]+)\/\.github\/workflows\/([^@/]+)@.+$/.exec(workflowRef.trim());
-  if (!match?.[1] || !match[2]) {
+  const match = /^([^/]+\/[^/]+)\/\.github\/workflows\/([^@/]+)@(.+)$/.exec(workflowRef.trim());
+  if (!match?.[1] || !match[2] || !match[3]) {
     throw new Error(`Invalid GitHub workflow_ref claim: ${workflowRef}`);
   }
   if (expectedRepository && match[1] !== expectedRepository) {
@@ -283,6 +341,7 @@ function parseWorkflowRef(workflowRef: string, expectedRepository?: string): Par
   return {
     repository: match[1],
     workflowFilename: match[2],
+    ref: match[3],
   };
 }
 

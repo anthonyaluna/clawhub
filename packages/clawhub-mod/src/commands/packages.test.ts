@@ -19,10 +19,47 @@ vi.mock("../../../clawhub/src/cli/registry.js", () => registryMocks.moduleFactor
 vi.mock("../../../clawhub/src/http.js", () => httpMocks.moduleFactory());
 vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
-const { cmdRepairPackageName, cmdTransferPackageOwner } = await import("./packages");
+const { cmdRepairPackageName, cmdTransferPackageOwner, cmdSetPackageTrustedPublisher } =
+  await import("./packages");
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+describe("cmdSetPackageTrustedPublisher", () => {
+  it("requires an explicit caller ref before making a request", async () => {
+    await expect(
+      cmdSetPackageTrustedPublisher(makeGlobalOpts(), "demo-plugin", {
+        repository: "owner/repo",
+        workflowFilename: "publish.yml",
+      }),
+    ).rejects.toThrow("--ref required");
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("sends approved refs for reusable=%s", async (reusable) => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ trustedPublisher: null });
+    await cmdSetPackageTrustedPublisher(makeGlobalOpts(), "demo-plugin", {
+      repository: "owner/repo",
+      workflowFilename: "publish.yml",
+      ref: " refs/heads/main ",
+      ...(reusable ? { reusableWorkflowRef: "a".repeat(40) } : {}),
+    });
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/packages/demo-plugin/trusted-publisher",
+        body: {
+          repository: "owner/repo",
+          workflowFilename: "publish.yml",
+          ref: "refs/heads/main",
+          ...(reusable ? { reusableWorkflowRef: "a".repeat(40) } : {}),
+        },
+      }),
+      expect.anything(),
+    );
+  });
 });
 
 describe("cmdRepairPackageName", () => {

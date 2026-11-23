@@ -192,6 +192,8 @@ export const PackageTrustedPublisherSchema = type({
     repositoryOwner: "string",
     repositoryOwnerId: "string",
     workflowFilename: "string",
+    ref: "string?",
+    reusableWorkflowRef: "string?",
     environment: "string?",
 });
 export const MAX_PACKAGE_MULTIPART_BYTES = 18 * 1024 * 1024;
@@ -690,6 +692,8 @@ export const ApiV1PackagePublishResponseSchema = type({
 export const PackageTrustedPublisherUpsertRequestSchema = type({
     repository: "string",
     workflowFilename: "string",
+    ref: "string",
+    reusableWorkflowRef: "string?",
     environment: "string?",
 });
 export const ApiV1PackageTrustedPublisherResponseSchema = type({

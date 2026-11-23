@@ -231,6 +231,8 @@ export const PackageTrustedPublisherSchema = type({
   repositoryOwner: "string",
   repositoryOwnerId: "string",
   workflowFilename: "string",
+  ref: "string?",
+  reusableWorkflowRef: "string?",
   environment: "string?",
 });
 export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
@@ -847,6 +849,8 @@ export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSch
 export const PackageTrustedPublisherUpsertRequestSchema = type({
   repository: "string",
   workflowFilename: "string",
+  ref: "string",
+  reusableWorkflowRef: "string?",
   environment: "string?",
 });
 export type PackageTrustedPublisherUpsertRequest =
